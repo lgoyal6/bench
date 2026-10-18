@@ -78,7 +78,9 @@ Stripe test mode is the real Stripe API with sandbox money; the README says so p
 - **Rig interface** (Tijil implements, Laksh calls): `run(task, commit, seed, fault_schedule) -> run_result`.
 - **Fault schedule format** (Laksh's chaos agent writes, Tijil's injector reads).
 - **Health check interface**: each lane exposes `check_live() -> list[problem]` for its own integrations; `bench doctor --live` (Tijil's CLI) calls both and fails on any problem.
-- **Bond rules**: bond to confidence mapping and a proper-scoring-rule payout.
+- **Bond rules**: every bidder posts the same bond and states a confidence; the agent gets back `bond * Brier score` and the customer keeps the rest, so stating the true chance of passing pays best. Implemented in [contracts/bench_contracts/bonds.py](contracts/bench_contracts/bonds.py).
+
+The contracts are implemented as a Python package in [contracts/](contracts/), with JSON Schemas in `contracts/schemas/` for the C/C++ rig.
 
 Repo layout:
 
