@@ -47,6 +47,16 @@ static inline uint64_t bench_now_ns(void)
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
+/* Granularity of timed sleeps: an absolute sleep can end up to this much after its
+ * deadline. On QNX this is the system clock period (ClockPeriod), 1 ms by default. */
+static inline uint64_t bench_clock_resolution_ns(void)
+{
+    struct timespec res;
+    if (clock_getres(CLOCK_MONOTONIC, &res) != 0)
+        return 1000000ull;
+    return (uint64_t)res.tv_sec * 1000000000ull + (uint64_t)res.tv_nsec;
+}
+
 /* Insert a user string event into the QNX kernel trace (no-op elsewhere). */
 static inline void bench_mark(int code, const char *msg)
 {

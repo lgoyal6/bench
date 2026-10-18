@@ -131,8 +131,10 @@ int main(int argc, char **argv)
     double error_sum = 0;
     int acked = 0, missed = 0, invalid_commands = 0, rig_overruns = 0;
     float previous_command = 0.0f;
-    /* Waking more than half a deadline late means the rig, not the controller, lost time. */
-    uint64_t overrun_ns = (uint64_t)L2_DEADLINE_MS * 1000000ull / 2;
+    /* A sleep ends on the first clock tick after its deadline, so every wakeup can be up
+     * to one tick late (1 ms on the Pi 5 QNX image). Waking later than that plus half a
+     * deadline means the rig, not the controller, lost time. */
+    uint64_t overrun_ns = bench_clock_resolution_ns() + (uint64_t)L2_DEADLINE_MS * 1000000ull / 2;
 
     for (int t = 0; t < trials; t++) {
         uint64_t tick_at = start + (uint64_t)t * period;
