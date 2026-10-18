@@ -12,6 +12,7 @@ execution = ["bench-rig", "bench-contestants", "bench-data"]
 bench-market = "bench_agents.runtime:main"
 bench-chaos = "bench_agents.chaos:main"
 bench-analytics = "bench_agents.export:main"
+bench-runs = "bench_agents.records:main"
 
 [project.entry-points."bench.healthchecks"]
 market = "bench_agents.health:MarketHealth"
