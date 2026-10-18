@@ -129,12 +129,18 @@ int main(int argc, char **argv)
     uint64_t period = (uint64_t)L2_PERIOD_MS * 1000000ull;
     uint64_t start = bench_now_ns() + period;
     double error_sum = 0;
-    int acked = 0, missed = 0, invalid_commands = 0;
+    int acked = 0, missed = 0, invalid_commands = 0, rig_overruns = 0;
     float previous_command = 0.0f;
+    /* Waking more than half a deadline late means the rig, not the controller, lost time. */
+    uint64_t overrun_ns = (uint64_t)L2_DEADLINE_MS * 1000000ull / 2;
 
     for (int t = 0; t < trials; t++) {
         uint64_t tick_at = start + (uint64_t)t * period;
         sleep_until(tick_at);
+        if (bench_now_ns() - tick_at > overrun_ns) {
+            rig_overruns++;
+            bench_mark_rig_overrun(t);
+        }
 
         float target = (float)trajectory((double)t * L2_PERIOD_MS / 1000.0, freq, phase);
         atomic_store(&sh->target_deg, target);
@@ -183,6 +189,7 @@ int main(int argc, char **argv)
     bench_log_extra(&log, "missed_ticks", missed);
     bench_log_extra(&log, "invalid_commands", invalid_commands);
     bench_log_extra(&log, "servo_output", servo.enabled ? 1 : 0);
+    bench_log_extra(&log, "rig_overruns", rig_overruns);
     bench_log_close(&log);
     servo_out_close(&servo);
     munmap(sh, sizeof *sh);

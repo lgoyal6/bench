@@ -60,12 +60,19 @@ def _short_copy(tmp_path: Path, task_id: str, trials: int) -> Path:
     return dst.parent
 
 
+def _host_overrun(result) -> bool:
+    """This host is not real-time, so the harness itself sometimes wakes up late. The rig
+    reports that as an "error" (not charged to the contestant); on QNX it should not happen."""
+    return result.verdict == "error" and "trials late" in result.verdict_reason
+
+
 def _run(tmp_path, tasks_dir, task_id, solution):
     config = RigConfig(
         rig_id="local", host="localhost", user="test", trace_store=tmp_path / "traces",
         tasks_dir=tasks_dir, workdir=str(tmp_path / "work"), contestant_core=0, harness_core=1,
         pin_template="env BENCH_CORE={core}",
         tracelogger_template="sh -c 'echo stand-in-trace > {path}'",
+        trace_dir=str(tmp_path),
     )
     request = RunRequest(task_id=task_id, contestant=ContestantId(agent="t", model="t"),
                          commit=Commit(repo="local", sha="0000000"), seed=11)
@@ -82,14 +89,14 @@ def test_l2_reference_beats_broken(tmp_path):
     good = _run(tmp_path / "good", tasks_dir, task.id, task.reference_solution)
     bad = _run(tmp_path / "bad", tasks_dir, task.id, task.broken_solution)
 
-    assert good.verdict != "error", good.verdict_reason
-    assert bad.verdict != "error", bad.verdict_reason
+    assert good.verdict != "error" or _host_overrun(good), good.verdict_reason
+    assert bad.verdict != "error" or _host_overrun(bad), bad.verdict_reason
     assert good.metrics.trials == 300
     # A shared, non-real-time host drops a few ticks (observed 0.98-1.0 for the reference,
     # 0.35-0.43 for broken), so check the margin rather than an exact rate.
     assert good.metrics.deadline_hit_rate >= 0.9, good.verdict_reason
     assert good.metrics.deadline_hit_rate - bad.metrics.deadline_hit_rate >= 0.3, bad.verdict_reason
-    assert bad.verdict == "fail"
+    assert bad.verdict == "fail" or _host_overrun(bad)
     assert good.metrics.extra["servo_output"] == 0.0
     assert good.metrics.extra["angle_error_deg"] < 15
 
@@ -108,6 +115,6 @@ def test_l2_rejects_invalid_commands_despite_prompt_acknowledgments(tmp_path, co
     )
     code.write_text(text)
     result = _run(tmp_path / "run", tasks_dir, "L2-servo-track", source)
-    assert result.verdict == "fail", result.verdict_reason
+    assert result.verdict == "fail" or _host_overrun(result), result.verdict_reason
     assert result.metrics.extra.get("invalid_commands", 0) > 0
     assert result.metrics.deadline_hit_rate < 1

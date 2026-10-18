@@ -51,6 +51,17 @@ def test_fault_not_survived_fails():
     assert verdict == "fail" and "cpu_hog#0" in reason
 
 
+def test_rig_overrun_is_an_error_not_a_fail():
+    log = parse_timing_log(f"R,0,echo,0,{ms(5)},0\nR,1,echo,0,-,0\nX,rig_overruns,1\n")
+    verdict, reason = judge(log, compute_metrics(log, TASK), TASK)
+    assert verdict == "error" and "not charged to the contestant" in reason
+
+
+def test_log_overflow_is_an_error():
+    log = parse_timing_log(f"R,0,echo,0,{ms(5)},0\nX,log_overflow,1\n")
+    assert judge(log, compute_metrics(log, TASK), TASK)[0] == "error"
+
+
 def test_no_live_trials_is_an_error():
     log = parse_timing_log("X,foo,1\n")
     assert judge(log, compute_metrics(log, TASK), TASK)[0] == "error"

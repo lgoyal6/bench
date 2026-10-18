@@ -3,6 +3,7 @@
 The log format is documented in harness/bench_trace.h. A run passes only if every
 non-silent trial met its deadline, nothing reacted in a silent round, and every injected
 fault was survived: real-time code that misses one deadline in a thousand still misses.
+If the rig itself fell behind (rig_overruns) the run is an error, never a fail.
 """
 
 import math
@@ -104,6 +105,13 @@ def compute_metrics(log: TimingLog, task: Task) -> Metrics:
 def judge(log: TimingLog, metrics: Metrics, task: Task,
           fault_schedule: FaultSchedule | None = None) -> tuple[str, str]:
     """Return (verdict, reason)."""
+    # Rig faults first: they explain anything odd that follows and are never the
+    # contestant's fault.
+    overruns = int(log.extras.get("rig_overruns", 0))
+    if overruns:
+        return "error", f"rig started {overruns} trials late; not charged to the contestant"
+    if log.extras.get("log_overflow"):
+        return "error", "harness timing log overflowed its buffer"
     expected = {(i, d.name) for i in range(task.trials) for d in task.deadlines}
     observed = [(r.trial, r.deadline) for r in log.reactions]
     if not expected or len(observed) != len(expected) or set(observed) != expected:

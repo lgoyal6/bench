@@ -50,7 +50,9 @@ def rig(tmp_path):
         workdir=str(tmp_path / "rigwork"), contestant_core=0, harness_core=1,
         pin_template="env BENCH_CORE={core}",
         tracelogger_template="sh -c 'echo stand-in-trace > {path}'",
+        trace_dir=str(tmp_path / "shmem"),
     )
+    (tmp_path / "shmem").mkdir()
     return QnxRig(config, remote=LocalShell())
 
 
@@ -103,7 +105,9 @@ def test_fault_schedule_runs_injector(rig):
 
 def test_run_script_pins_harness_and_contestant_to_separate_cores(tmp_path):
     config = RigConfig(rig_id="r", host="h", user="u", trace_store=tmp_path, tasks_dir=FIXTURES / "tasks")
-    script = render_run_script(config, load_task(FIXTURES / "tasks", "L1-echo-test"), seed=3, with_faults=False)
+    script = render_run_script(config, load_task(FIXTURES / "tasks", "L1-echo-test"), seed=3,
+                               with_faults=False, trace_file="/dev/shmem/bench-r1.kev")
+    assert "sudo -n tracelogger -s 10 -f /dev/shmem/bench-r1.kev" in script
     assert "on -C 2 -p 60f /tmp/bench/harness/harness --seed 3" in script
     assert "on -C 3 -p 10r /tmp/bench/solution/solution" in script
     assert "/rig/injector" not in script
