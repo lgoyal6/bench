@@ -62,13 +62,13 @@ def run_seconds(task: Task) -> int:
     return int(task.trials * per_trial_ms / 1000) + 10
 
 
-def render_run_script(config: RigConfig, task: Task, seed: int, with_faults: bool) -> str:
+def render_run_script(config: RigConfig, task: Task, seed: int, with_faults: bool, trace_file: str) -> str:
     w = config.workdir
     harness_pin = config.pin_template.format(core=config.harness_core, prio=config.harness_priority, policy="f")
     solution_pin = config.pin_template.format(
         core=config.contestant_core, prio=config.contestant_priority, policy="r"
     )
-    tracer = config.tracelogger_template.format(seconds=run_seconds(task), path=f"{w}/trace.kev")
+    tracer = config.tracelogger_template.format(seconds=run_seconds(task), path=trace_file)
     injector = ""
     if with_faults:
         injector = (
@@ -201,7 +201,9 @@ class QnxRig:
         }
         for name, path in parts.items():
             (staging / f"{name}.tar").write_bytes(_tar_dir(path))
-        (staging / "run.sh").write_text(render_run_script(self.config, task, seed, faults is not None))
+        (staging / "run.sh").write_text(
+            render_run_script(self.config, task, seed, faults is not None, self._trace_file(out.name))
+        )
         if faults is not None:
             (staging / "faults.txt").write_text(schedule_lines(faults, task))
 
@@ -220,11 +222,17 @@ class QnxRig:
                 raise RemoteError(f"{name} build failed on the rig: {tail}")
 
     def _fetch(self, out: Path) -> None:
-        for name in ARTIFACTS:
+        sources = {name: f"{self.config.workdir}/{name}" for name in ARTIFACTS}
+        sources["trace.kev"] = self._trace_file(out.name)
+        for name, remote_path in sources.items():
             try:
-                self.remote.get(f"{self.config.workdir}/{name}", out / name)
+                self.remote.get(remote_path, out / name)
             except (RemoteError, OSError, subprocess.TimeoutExpired):
                 pass  # absent artifacts are reported by the caller
+
+    def _trace_file(self, run_id: str) -> str:
+        """Per-run trace file on the rig, so a stale trace can never be scored."""
+        return f"{self.config.trace_dir.rstrip('/')}/bench-{run_id}.kev"
 
     def _uri(self, run_id: str, path: Path) -> str:
         if self.config.trace_base_url:
@@ -245,6 +253,9 @@ class QnxRig:
         for tool in ("tracelogger", "on", "slay", "make", "tar", "cc"):
             if self.remote.run(f"command -v {tool}", timeout=20, check=False).returncode != 0:
                 problems.append(f"rig {self.config.rig_id}: {tool} not found on the rig")
+        if self.config.tracelogger_template.startswith("sudo -n ") and \
+                self.remote.run("sudo -n true", timeout=20, check=False).returncode != 0:
+            problems.append(f"rig {self.config.rig_id}: passwordless sudo is needed to run tracelogger")
         try:
             self.config.trace_store.mkdir(parents=True, exist_ok=True)
         except OSError as e:

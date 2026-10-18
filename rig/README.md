@@ -9,13 +9,13 @@ The QNX rig: builds, runs, times and faults contestant code on a Raspberry Pi 5,
 1. The contestant's commit is fetched and staged with the task's `harness/` and the rig tools in `harness/` here.
 2. All three are built **on the QNX Pi** with `make`.
 3. A generated `run.sh` runs on the rig:
-   - starts `tracelogger` (raw kernel trace, `trace.kev`)
+   - starts `tracelogger` through passwordless `sudo` (it needs root). It writes the raw kernel trace to RAM (`/dev/shmem/bench-<run_id>.kev`), so trace writes never compete with the harness for the SD card
    - starts the task harness on the harness core at FIFO priority
    - starts the contestant on **its own core** (`on -C`) at round-robin priority
    - starts the fault injector if the request carries a `FaultSchedule`
    - waits for the harness to finish
 4. `timing.csv`, `trace.kev` and every log are copied to `$BENCH_TRACE_STORE/<run_id>/` with `run_result.json`.
-5. Metrics come from the harness timing log. Every record is also a user event in the kernel trace, so the two can be cross-checked. SHA-256 hashes of both go in `provenance`.
+5. Metrics come from the harness timing log. Harnesses keep records in memory and write the log only at the end: on the Pi 5, one SD card write blocked for 40 ms mid-run, which made a correct controller look like it missed ticks. Trials the rig itself starts late are reported as `rig_overruns` and turn the run into an `error`, not a contestant fail. Every record is also a user event in the kernel trace, so the two can be cross-checked. SHA-256 hashes of both go in `provenance`.
 
 **Verdicts:**
 - `pass`: every non-silent trial met its deadline, no false triggers, and every fault was survived.
@@ -64,17 +64,18 @@ The contract field `Task.cpu_budget_pct` is currently not enforced (see plans/TI
 | `BENCH_RIG_CONTESTANT_CORE`, `BENCH_RIG_HARNESS_CORE` | no | `3`, `2` |
 | `BENCH_RIG_CONTESTANT_PRIORITY`, `BENCH_RIG_HARNESS_PRIORITY` | no | `10`, `60` |
 | `BENCH_RIG_PIN_TEMPLATE` | no | `on -C {core} -p {prio}{policy}` |
-| `BENCH_RIG_TRACELOGGER_TEMPLATE` | no | `tracelogger -s {seconds} -f {path}` |
+| `BENCH_RIG_TRACELOGGER_TEMPLATE` | no | `sudo -n tracelogger -s {seconds} -f {path}` |
+| `BENCH_RIG_TRACE_DIR` | no | `/dev/shmem` |
 
 The host needs passwordless SSH to the rig (`BatchMode=yes`).
 
 ## Not yet verified on hardware
 
 These still need checking on the QNX Pi:
-- the `tracelogger` flags (check with `use tracelogger`)
 - `on -p` priority syntax
 - whether `slay -f` is available
-- the on-device toolchain name (`cc`)
+
+Confirmed on the Pi 5 QSTI (QNX 8.0, June 2026 build): `tracelogger`, `on`, `slay`, `make`, `tar`, `cc`, `gcc`, `clang` and `git` are present. `traceprinter` is not, and the rig doesn't need it. `tracelogger` needs root, so the default runs it through `sudo -n`.
 
 `bench doctor --live` checks that the tools exist.
 

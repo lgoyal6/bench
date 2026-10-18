@@ -25,8 +25,11 @@ class RigConfig:
     harness_priority: int = 60
     # QNX `on`: -C pins to a core, -p sets priority and policy (r = round robin, f = FIFO).
     pin_template: str = "on -C {core} -p {prio}{policy}"
-    # Verify the flags against `use tracelogger` on the rig image.
-    tracelogger_template: str = "tracelogger -s {seconds} -f {path}"
+    # tracelogger must run as root on QNX; qnxuser runs it through passwordless sudo.
+    tracelogger_template: str = "sudo -n tracelogger -s {seconds} -f {path}"
+    # The kernel trace goes to RAM (/dev/shmem) so tens of MB of trace writes never
+    # compete with the harness for the SD card during a run.
+    trace_dir: str = "/dev/shmem"
     trace_base_url: str | None = None
     ssh_options: tuple[str, ...] = ("-o", "BatchMode=yes", "-o", "ConnectTimeout=10")
 
@@ -53,6 +56,7 @@ class RigConfig:
             "BENCH_RIG_HARNESS_PRIORITY": ("harness_priority", int),
             "BENCH_RIG_PIN_TEMPLATE": ("pin_template", str),
             "BENCH_RIG_TRACELOGGER_TEMPLATE": ("tracelogger_template", str),
+            "BENCH_RIG_TRACE_DIR": ("trace_dir", str),
             "BENCH_TRACE_BASE_URL": ("trace_base_url", str),
         }
         for var, (field, cast) in optional.items():
