@@ -25,7 +25,7 @@ from pathlib import Path
 from bench_contracts import FaultSchedule, Metrics, RunRequest, RunResult, Task
 
 from .config import REPO_ROOT, ConfigError, RigConfig
-from .faults import schedule_lines
+from .faults import FaultScheduleError, schedule_lines, validate_execution
 from .remote import Remote, RemoteError
 from .tasks import load_task, task_dir
 from .timing import TimingLogError, compute_metrics, judge, parse_timing_log
@@ -73,10 +73,16 @@ def render_run_script(config: RigConfig, task: Task, seed: int, with_faults: boo
     if with_faults:
         injector = (
             f"{w}/rig/injector --schedule {w}/faults.txt --harness-pid $H "
-            f"--hog-bin {w}/rig/cpuhog --hog-core {config.contestant_core} > {w}/injector.log 2>&1 &"
+            f"--hog-bin {w}/rig/cpuhog --hog-core {config.contestant_core} > {w}/injector.log 2>&1 &\nI=$!"
         )
     return f"""#!/bin/sh
 cd {w}
+H= S= I= TL=
+cleanup() {{
+    for pid in $H $S $I $TL; do kill "$pid" 2>/dev/null; done
+}}
+trap cleanup 0
+trap 'exit 3' HUP INT TERM
 {tracer} > {w}/tracelogger.log 2>&1 &
 TL=$!
 sleep 1
@@ -90,10 +96,15 @@ S=$!
 {injector}
 wait $H
 HS=$?
+H=
 kill $S 2>/dev/null
+IS=0
+if [ -n "$I" ]; then wait $I; IS=$?; I=; fi
 sleep 1
 kill $TL 2>/dev/null
 echo "harness_exit=$HS"
+echo "injector_exit=$IS"
+if [ "$HS" -ne 0 ] || [ "$IS" -ne 0 ]; then exit 3; fi
 exit $HS
 """
 
@@ -143,12 +154,18 @@ class QnxRig:
             (out / "run.log").write_text(f"{e}\n")
             return finish(empty, "error", f"rig setup failed: {e}", out / "run.log", {})
 
+        execution_problem = None
         try:
             proc = self.remote.run(f"sh {self.config.workdir}/run.sh", timeout=run_seconds(task) + 60, check=False)
             (out / "run.log").write_text(proc.stdout + proc.stderr)
-        except subprocess.TimeoutExpired:
-            (out / "run.log").write_text("run timed out\n")
+            if proc.returncode != 0:
+                execution_problem = f"rig execution failed with exit status {proc.returncode}"
+        except (RemoteError, OSError, subprocess.TimeoutExpired) as e:
+            execution_problem = f"rig execution failed: {type(e).__name__}"
+            (out / "run.log").write_text(f"{execution_problem}\n")
         self._fetch(out)
+        if execution_problem:
+            return finish(empty, "error", execution_problem, out / "run.log", {})
 
         trace = out / "trace.kev"
         timing = out / "timing.csv"
@@ -163,7 +180,14 @@ class QnxRig:
             metrics = compute_metrics(log, task)
         except TimingLogError as e:
             return finish(empty, "error", f"bad timing log: {e}", trace, provenance)
-        verdict, reason = judge(log, metrics, task)
+        if request.fault_schedule is not None:
+            injector_log = out / "injector.log"
+            try:
+                validate_execution(injector_log.read_text(), request.fault_schedule, task, log.completed_ns)
+            except (OSError, FaultScheduleError) as e:
+                return finish(empty, "error", f"fault execution unverified: {e}", trace, provenance)
+            provenance["injector_sha256"] = _sha256(injector_log)
+        verdict, reason = judge(log, metrics, task, request.fault_schedule)
         return finish(metrics, verdict, reason, trace, provenance)
 
     def _stage_and_build(self, task: Task, source: Path, faults: FaultSchedule | None, seed: int, out: Path) -> None:
@@ -199,7 +223,7 @@ class QnxRig:
         for name in ARTIFACTS:
             try:
                 self.remote.get(f"{self.config.workdir}/{name}", out / name)
-            except RemoteError:
+            except (RemoteError, OSError, subprocess.TimeoutExpired):
                 pass  # absent artifacts are reported by the caller
 
     def _uri(self, run_id: str, path: Path) -> str:

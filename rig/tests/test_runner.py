@@ -106,7 +106,7 @@ def test_run_script_pins_harness_and_contestant_to_separate_cores(tmp_path):
     script = render_run_script(config, load_task(FIXTURES / "tasks", "L1-echo-test"), seed=3, with_faults=False)
     assert "on -C 2 -p 60f /tmp/bench/harness/harness --seed 3" in script
     assert "on -C 3 -p 10r /tmp/bench/solution/solution" in script
-    assert "injector" not in script
+    assert "/rig/injector" not in script
 
 
 def test_config_requires_core_settings():
@@ -117,3 +117,50 @@ def test_config_requires_core_settings():
             "BENCH_RIG_ID": "rig-1", "BENCH_RIG_HOST": "h", "BENCH_RIG_USER": "u",
             "BENCH_TRACE_STORE": "/tmp/x", "BENCH_RIG_CONTESTANT_CORE": "2",
         })
+
+
+@pytest.mark.parametrize("failure", ["nonzero", "timeout"])
+def test_failed_execution_never_grades_remaining_artifacts(rig, monkeypatch, failure):
+    monkeypatch.setattr(rig, "_stage_and_build", lambda *args: None)
+
+    def run(*args, **kwargs):
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired("run.sh", 1)
+        return subprocess.CompletedProcess("run.sh", 7, "harness failed", "")
+
+    def fetch(out):
+        (out / "trace.kev").write_text("test-only trace")
+        (out / "timing.csv").write_text(
+            "".join(f"R,{i},echo,0,1000000,0\n" for i in range(10))
+        )
+
+    monkeypatch.setattr(rig.remote, "run", run)
+    monkeypatch.setattr(rig, "_fetch", fetch)
+    result = rig.run_source(request(), FIXTURES / "solutions" / "echo-good")
+    assert result.verdict == "error"
+
+
+@needs_linux
+def test_injector_child_failure_is_a_rig_error(rig, monkeypatch):
+    original_run = rig.remote.run
+
+    def run(command, **kwargs):
+        if command == f"sh {rig.config.workdir}/run.sh":
+            (Path(rig.config.workdir) / "rig/cpuhog").write_text("#!/bin/sh\nexit 9\n")
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(rig.remote, "run", run)
+    schedule = FaultSchedule(schedule_id="bad-hog", task_id="L1-echo-test", author="test",
+        events=[FaultEvent(at_ms=10, kind="cpu_hog", target="background", duration_ms=10)])
+    result = rig.run_source(request(schedule), FIXTURES / "solutions" / "echo-good")
+    assert result.verdict == "error"
+    assert "execution failed" in result.verdict_reason
+
+
+@needs_linux
+def test_fault_applied_after_harness_completion_is_an_error(rig):
+    schedule = FaultSchedule(schedule_id="late", task_id="L1-echo-test", author="test",
+        events=[FaultEvent(at_ms=1000, kind="cpu_hog", target="background", duration_ms=10)])
+    result = rig.run_source(request(schedule), FIXTURES / "solutions" / "echo-good")
+    assert result.verdict == "error"
+    assert "before the harness completed" in result.verdict_reason

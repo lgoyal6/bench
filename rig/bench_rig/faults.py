@@ -27,3 +27,26 @@ def schedule_lines(schedule: FaultSchedule, task: Task) -> str:
         load_s = "-" if load is None else str(int(float(load)))
         lines.append(f"{int(event.at_ms)} {event.kind} {event.target} {duration} {load_s}")
     return "\n".join(lines) + "\n"
+
+
+def validate_execution(text: str, schedule: FaultSchedule, task: Task,
+                       completed_ns: int | None) -> None:
+    """Require one successful injector record for each exact scheduled event."""
+    expected = []
+    for index, line in enumerate(schedule_lines(schedule, task).splitlines()):
+        if not line:
+            continue
+        fields = ["-1" if field == "-" else field for field in line.split()]
+        expected.append(["E", str(index), fields[1], fields[2], fields[0], *fields[3:], "0"])
+    recorded = [line.split(",") for line in text.splitlines() if line.startswith("E,")]
+    if len(recorded) != len(expected):
+        raise FaultScheduleError("injector execution records do not match the requested schedule")
+    for actual, wanted in zip(recorded, expected, strict=True):
+        if len(actual) != 10 or actual[:8] != wanted:
+            raise FaultScheduleError("injector execution records do not match the requested schedule")
+        try:
+            started, ended = map(int, actual[8:])
+        except ValueError as e:
+            raise FaultScheduleError("invalid injector timestamps") from e
+        if completed_ns is None or not 0 <= started <= ended <= completed_ns:
+            raise FaultScheduleError("fault did not finish before the harness completed")

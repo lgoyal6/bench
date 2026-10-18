@@ -44,6 +44,19 @@ int main(int argc, char **argv)
         bench_log_reaction(&log, t, "echo", s, got, 0);
     }
     bench_log_extra(&log, "echo_trials", trials);
+    /* Test-only echo survival: the complete response loop remained alive under load.
+     * The runner separately requires successful execution of these exact events. */
+    FILE *faults = fopen("faults.txt", "r");
+    if (faults) {
+        char line[256], kind[32];
+        long at;
+        int index = 0;
+        while (fgets(line, sizeof line, faults)) {
+            if (sscanf(line, "%ld %31s", &at, kind) == 2)
+                bench_log_fault(&log, index++, kind, 1);
+        }
+        fclose(faults);
+    }
     bench_log_close(&log);
     close(stim);
     close(resp);

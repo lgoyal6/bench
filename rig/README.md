@@ -22,6 +22,10 @@ The QNX rig: builds, runs, times and faults contestant code on a Raspberry Pi 5,
 - `fail`: any deadline missed, any false trigger, any fault not survived, or the contestant's code did not build.
 - `error`: the rig itself failed. This is never charged to the contestant.
 
+The grader requires exactly one reaction for every trial index (`0` through `trials - 1`) and each declared deadline. Missing, duplicate or unexpected records are rig errors. A nonzero harness/injector exit or execution timeout is also an error, even if timing artifacts exist.
+
+Faulted runs require one matching `F` outcome per scheduled event, a harness completion timestamp (`D`), and successful injector execution records. Injector records bind event index, kind, target, requested timing/parameters, return status and monotonic start/end timestamps. CPU-load children must exit successfully, and every fault must finish before harness completion. The execution log hash is retained in provenance and checked by replay. Missing evidence stays an error; it never implies survival.
+
 ## Isolation: cores, not CPU budgets
 
 QNX OS 8.0 does not support adaptive partitioning, so there are no guaranteed CPU budgets on the Pi 5 image ([QNX 8.0 docs](https://www.qnx.com/developers/docs/8.0/com.qnx.doc.ide.userguide/topic/APS_view.html)). The rig isolates runs by core instead:

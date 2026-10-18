@@ -8,7 +8,7 @@ fault was survived: real-time code that misses one deadline in a thousand still 
 import math
 from dataclasses import dataclass, field
 
-from bench_contracts import Metrics, Task
+from bench_contracts import FaultSchedule, Metrics, Task
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,7 @@ class TimingLog:
     reactions: list[Reaction] = field(default_factory=list)
     faults: list[FaultOutcome] = field(default_factory=list)
     extras: dict[str, float] = field(default_factory=dict)
+    completed_ns: int | None = None
 
 
 class TimingLogError(ValueError):
@@ -52,6 +53,8 @@ def parse_timing_log(text: str) -> TimingLog:
             continue
         parts = line.split(",")
         try:
+            if log.completed_ns is not None:
+                raise ValueError("record after harness completion")
             if parts[0] == "R" and len(parts) == 6:
                 response = None if parts[4] == "-" else int(parts[4])
                 log.reactions.append(
@@ -61,6 +64,8 @@ def parse_timing_log(text: str) -> TimingLog:
                 log.faults.append(FaultOutcome(int(parts[1]), parts[2], parts[3] == "1"))
             elif parts[0] == "X" and len(parts) == 3:
                 log.extras[parts[1]] = float(parts[2])
+            elif parts[0] == "D" and len(parts) == 2:
+                log.completed_ns = int(parts[1])
             else:
                 raise ValueError("unknown record")
         except ValueError as e:
@@ -86,7 +91,7 @@ def compute_metrics(log: TimingLog, task: Task) -> Metrics:
     hits = sum(1 for r in live if r.latency_ms is not None and r.latency_ms <= limits[r.deadline])
 
     return Metrics(
-        trials=len(log.reactions),
+        trials=len({r.trial for r in log.reactions}),
         deadline_hit_rate=hits / len(live) if live else 0.0,
         worst_latency_ms=max(latencies) if latencies else None,
         p99_latency_ms=_percentile(latencies, 99) if latencies else None,
@@ -96,8 +101,19 @@ def compute_metrics(log: TimingLog, task: Task) -> Metrics:
     )
 
 
-def judge(log: TimingLog, metrics: Metrics, task: Task) -> tuple[str, str]:
+def judge(log: TimingLog, metrics: Metrics, task: Task,
+          fault_schedule: FaultSchedule | None = None) -> tuple[str, str]:
     """Return (verdict, reason)."""
+    expected = {(i, d.name) for i in range(task.trials) for d in task.deadlines}
+    observed = [(r.trial, r.deadline) for r in log.reactions]
+    if not expected or len(observed) != len(expected) or set(observed) != expected:
+        return "error", "harness did not record exactly one reaction per trial and deadline"
+    events = sorted(fault_schedule.events, key=lambda e: e.at_ms) if fault_schedule else []
+    expected_faults = [(i, e.kind) for i, e in enumerate(events)]
+    if sorted((f.index, f.kind) for f in log.faults) != expected_faults:
+        return "error", "harness fault outcomes do not match the requested schedule"
+    if events and log.completed_ns is None:
+        return "error", "faulted run has no harness completion timestamp"
     live = [r for r in log.reactions if not r.silent]
     if not live:
         return "error", "harness recorded no non-silent trials"
