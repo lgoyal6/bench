@@ -19,6 +19,7 @@ from pathlib import Path
 from bench_contracts import Commit, ContestantId, FaultSchedule, RunRequest, RunResult
 from bench_rig import QnxRig, RigConfig, compute_metrics, judge, parse_timing_log
 from bench_rig.config import REPO_ROOT, ConfigError
+from bench_rig.faults import FaultScheduleError, validate_execution
 from bench_rig.tasks import list_tasks, load_task
 
 
@@ -81,12 +82,21 @@ def cmd_replay(args: argparse.Namespace) -> int:
     sha_ok = expected_sha is None or hashlib.sha256(timing).hexdigest() == expected_sha
     log = parse_timing_log(timing.decode())
     metrics = compute_metrics(log, task)
-    verdict, reason = judge(log, metrics, task)
-    same = sha_ok and verdict == saved.verdict and metrics == saved.metrics
+    execution_ok = True
+    if saved.request.fault_schedule is not None:
+        try:
+            execution = (run_dir / "injector.log").read_bytes()
+            execution_ok = hashlib.sha256(execution).hexdigest() == saved.provenance.get("injector_sha256")
+            validate_execution(execution.decode(), saved.request.fault_schedule, task, log.completed_ns)
+        except (OSError, ValueError, FaultScheduleError):
+            execution_ok = False
+    verdict, reason = judge(log, metrics, task, saved.request.fault_schedule)
+    same = sha_ok and execution_ok and verdict == saved.verdict and metrics == saved.metrics
     print(json.dumps({
         "run_id": saved.run_id, "saved_verdict": saved.verdict, "replayed_verdict": verdict,
         "replayed_reason": reason, "metrics_match": metrics == saved.metrics,
         "timing_log_matches_provenance": sha_ok,
+        "fault_execution_matches_provenance": execution_ok,
     }, indent=2))
     return 0 if same else 1
 

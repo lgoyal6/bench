@@ -123,6 +123,9 @@ int main(int argc, char **argv)
     pid_t harness = 0;
     int hog_core = -1;
     event events[MAX_EVENTS];
+    pid_t children[MAX_EVENTS] = {0};
+    int results[MAX_EVENTS] = {0}, failed = 0;
+    uint64_t applied[MAX_EVENTS], completed[MAX_EVENTS];
     char msg[160];
 
     for (int i = 1; i + 1 < argc; i += 2) {
@@ -159,7 +162,10 @@ int main(int argc, char **argv)
         } else if (!strcmp(e->kind, "cpu_hog")) {
             long ms = e->duration_ms < 0 ? 1000 : e->duration_ms;
             int load = e->load_pct < 0 ? 100 : e->load_pct;
-            rc = spawn_hog(hog_bin, hog_core, ms, load) > 0 ? 0 : -1;
+            pid_t child = spawn_hog(hog_bin, hog_core, ms, load);
+            rc = child > 0 ? 0 : -1;
+            if (child > 0)
+                children[i] = child;
         } else {
             fprintf(stderr, "injector: unknown fault kind %s\n", e->kind);
             return 2;
@@ -168,10 +174,31 @@ int main(int argc, char **argv)
         snprintf(msg, sizeof msg, "fault %d %s %s at %ld ms rc=%d", i, e->kind, e->target, e->at_ms, rc);
         bench_mark(BENCH_MARK_FAULT, msg);
         printf("%llu %s\n", (unsigned long long)(bench_now_ns() - start), msg);
+        applied[i] = bench_now_ns();
+        completed[i] = applied[i];
+        if ((!strcmp(e->kind, "stop_sensor") || !strcmp(e->kind, "corrupt_bytes")) && e->duration_ms > 0)
+            completed[i] += (uint64_t)e->duration_ms * 1000000ull;
+        results[i] = rc;
         fflush(stdout);
+        if (rc != 0)
+            failed = 1;
     }
 
-    while (wait(NULL) > 0)
-        ;
-    return 0;
+    for (int i = 0; i < n; i++) {
+        if (children[i] > 0) {
+            int status;
+            pid_t child;
+            do { child = waitpid(children[i], &status, 0); } while (child < 0 && errno == EINTR);
+            completed[i] = bench_now_ns();
+            if (child < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                failed = 1;
+                results[i] = -1;
+            }
+        }
+        event *e = &events[i];
+        printf("E,%d,%s,%s,%ld,%ld,%d,%d,%llu,%llu\n", i, e->kind, e->target,
+               e->at_ms, e->duration_ms, e->load_pct, results[i],
+               (unsigned long long)applied[i], (unsigned long long)completed[i]);
+    }
+    return failed ? 1 : 0;
 }

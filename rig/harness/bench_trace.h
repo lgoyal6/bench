@@ -10,6 +10,7 @@
  *   R,<trial>,<deadline>,<stimulus_ns>,<response_ns or ->,<silent 0|1>   reaction trial
  *   F,<fault_index>,<kind>,<survived 0|1>                                fault outcome
  *   X,<name>,<value>                                                     task-specific metric
+ *   D,<completed_ns>                                                    harness completion
  */
 #ifndef BENCH_TRACE_H
 #define BENCH_TRACE_H
@@ -61,6 +62,7 @@ static inline int bench_log_open(bench_log *log, const char *path)
 static inline void bench_log_close(bench_log *log)
 {
     if (log->f) {
+        fprintf(log->f, "D,%llu\n", (unsigned long long)bench_now_ns());
         fclose(log->f);
         log->f = NULL;
     }
