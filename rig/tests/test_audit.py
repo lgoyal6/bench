@@ -124,3 +124,17 @@ def test_apply_audit_turns_a_violation_into_a_fail_but_keeps_errors():
     assert verdict == "fail" and reason.startswith("broke rig rules: set priority 63")
     assert m.extra["audit_max_priority_set"] == 63
     assert apply_audit(audit, metrics, "error", "rig fault")[1:] == ("error", "rig fault")
+
+
+def test_per_cpu_buffers_are_put_back_in_time_order():
+    # as on the Pi: an early READY of the contestant on CPU 1 lands in the file after it
+    # started running on CPU 3, and must not hide its later SchedSet
+    data = _trace(
+        _process(0, CORE, 1, 100, NAME),
+        _run(500, CORE, 100),
+        _run(10, 1, 100), _ready(20, 1, 100),   # written late, from start-up
+        _sched_set(600, CORE, 45),
+    )
+    result = audit_trace(data, NAME, CORE)
+    assert result.priorities_set == [45]
+    assert result.off_core_us == pytest.approx(10)
