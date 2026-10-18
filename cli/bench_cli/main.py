@@ -1,8 +1,10 @@
-"""bench verify | run | replay | doctor
+"""bench verify | run | compete | replay | doctor
 
   bench verify L2-servo-track        reference must pass, broken must fail, on the real rig
   bench verify --all
   bench run --task T --repo URL --sha SHA --agent A --model M [--seed N] [--faults F.json]
+  bench compete --task T --contestant claude-code|devin-api [--attempts 2] [--seed N]
+                                     an agent writes the code, the rig grades it, results go back for a retry
   bench replay RUN_DIR               re-score a saved run from its timing log
   bench doctor --live                every lane's check_live(); non-zero exit on any problem
 """
@@ -21,6 +23,8 @@ from bench_rig import QnxRig, RigConfig, compute_metrics, judge, parse_timing_lo
 from bench_rig.config import REPO_ROOT, ConfigError
 from bench_rig.faults import FaultScheduleError, validate_execution
 from bench_rig.tasks import list_tasks, load_task
+
+from .compete import compete
 
 
 def _rig() -> QnxRig:
@@ -101,6 +105,20 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0 if same else 1
 
 
+def cmd_compete(args: argparse.Namespace) -> int:
+    factories = {ep.name: ep for ep in entry_points(group="bench.contestants")}
+    if args.contestant not in factories:
+        print(f"unknown contestant {args.contestant!r}; installed: {', '.join(sorted(factories)) or 'none'}",
+              file=sys.stderr)
+        return 2
+    rig = _rig()
+    contestant = factories[args.contestant].load()()
+    task = load_task(rig.config.tasks_dir, args.task)
+    seed = args.seed if args.seed is not None else random.randrange(2**31)
+    record = compete(contestant, rig, task, seed, args.attempts, rig.config.trace_store / "compete")
+    return 0 if record["final_verdict"] != "error" else 1
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     if not args.live:
         print("use: bench doctor --live", file=sys.stderr)
@@ -146,6 +164,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("run_dir")
     p.add_argument("--tasks-dir")
     p.set_defaults(func=cmd_replay)
+
+    p = sub.add_parser("compete", help="a contestant agent writes code for a task; the rig grades it")
+    p.add_argument("--task", required=True)
+    p.add_argument("--contestant", required=True, help="e.g. claude-code, devin-api")
+    p.add_argument("--attempts", type=int, default=2, help="including retries after feedback")
+    p.add_argument("--seed", type=int)
+    p.set_defaults(func=cmd_compete)
 
     p = sub.add_parser("doctor", help="check every live integration")
     p.add_argument("--live", action="store_true")

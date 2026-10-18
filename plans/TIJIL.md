@@ -24,6 +24,11 @@ Bugs found on hardware and fixed in PR #10:
 1. A harness write to `timing.csv` on the SD card blocked 40.3 ms (REPLY-blocked on `devb-sdmmc-bcm2712`), so a correct controller was scored with missed ticks. Results are now buffered in memory, and the trace goes to `/dev/shmem`.
 2. The rig-overrun limit ignored the 1 ms clock tick. It's now clock resolution plus half the deadline.
 
+## Contestants
+
+- `devin-api`: Devin v3 API driver. Waiting on a service-user key from Cognition.
+- `claude-code`: Claude Code headless driver. It works today, so the full loop (agent writes code, the rig grades it, results go back, the agent retries) can run before the Devin key arrives. Run it with `bench compete --task L2-servo-track --contestant claude-code`.
+
 ## Findings so far (check on hardware where marked)
 
 - **No CPU budgets on QNX 8.0.** QNX's 8.0 IDE guide states the OS does not support adaptive partitioning, and the Pi 5 image is SDP 8.0. The rig isolates by core instead: the contestant is pinned to its own core (`on -C 3`), the harness to another, at fixed priorities. `Task.cpu_budget_pct` is therefore not enforced; a contract change (rename to a core/priority spec, or drop it) needs a shared PR with Laksh.

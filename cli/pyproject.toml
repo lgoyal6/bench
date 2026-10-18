@@ -3,7 +3,7 @@ name = "bench-cli"
 version = "0.1.0"
 description = "The bench command: verify tasks, run contestants, replay runs, check live integrations"
 requires-python = ">=3.10"
-dependencies = ["bench-contracts", "bench-rig"]
+dependencies = ["bench-contracts", "bench-rig", "bench-contestants"]
 
 [project.scripts]
 bench = "bench_cli.main:main"
@@ -14,6 +14,7 @@ dev = ["pytest>=8"]
 [tool.uv.sources]
 bench-contracts = { path = "../contracts", editable = true }
 bench-rig = { path = "../rig", editable = true }
+bench-contestants = { path = "../contestants", editable = true }
 
 [build-system]
 requires = ["hatchling"]

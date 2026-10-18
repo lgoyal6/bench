@@ -21,6 +21,8 @@ from dataclasses import dataclass
 import httpx
 from bench_contracts import Commit, ContestantId, RunResult, Submission, Task
 
+from .prompts import result_summary, task_brief
+
 DEFAULT_BASE = "https://api.devin.ai"
 SHA = re.compile(r"^[0-9a-f]{7,40}$")
 TERMINAL_STATUSES = {"error", "failed", "exit", "exited", "stopped", "expired"}
@@ -70,16 +72,7 @@ class DevinConfig:
 
 
 def task_prompt(task: Task, repo: str, branch: str) -> str:
-    return f"""You are a contestant in Bench, a benchmark that grades code on a real QNX real-time system.
-Your code is built and run on a Raspberry Pi 5 running QNX OS 8.0, pinned to one CPU core, and
-graded only by measured timing: every deadline must be met, every time.
-
-Task {task.id} (level {task.level}): {task.title}
-
-{task.instruction}
-
-Deadlines: {", ".join(f"{d.name} within {d.max_ms:g} ms" for d in task.deadlines)}.
-Trials per run: {task.trials}.
+    return f"""{task_brief(task)}
 
 Deliver it like this:
 1. Work in the repository {repo} on a new branch named {branch}.
@@ -93,26 +86,11 @@ the new SHA."""
 
 
 def feedback_message(result: RunResult) -> str:
-    m = result.metrics
-    lines = [
-        f"Bench ran your commit {result.request.commit.sha} on QNX rig {result.rig_id}.",
-        f"Verdict: {result.verdict.upper()}. {result.verdict_reason}",
-        f"Trials: {m.trials}. Deadline hit rate: {m.deadline_hit_rate:.4f}.",
-    ]
-    if m.worst_latency_ms is not None:
-        lines.append(f"Worst latency: {m.worst_latency_ms:.3f} ms. p99: {m.p99_latency_ms:.3f} ms.")
-    if m.false_triggers:
-        lines.append(f"False triggers: {m.false_triggers}.")
-    if m.fault_survived is not None:
-        lines.append(f"Survived injected faults: {'yes' if m.fault_survived else 'no'}.")
-    for name, value in sorted(m.extra.items()):
-        lines.append(f"{name}: {value:g}")
-    lines.append(f"Raw QNX kernel trace: {result.trace_uri}")
-    lines.append(
-        "Fix the code so every deadline is met, push a new commit to the same branch, "
+    return (
+        result_summary(result)
+        + "\nFix the code so every deadline is met, push a new commit to the same branch, "
         "and report the new SHA in the structured output."
     )
-    return "\n".join(lines)
 
 
 class DevinApiContestant:
@@ -185,6 +163,11 @@ class DevinApiContestant:
             if time.monotonic() >= deadline:
                 raise DevinError(f"session {session_id} reported no new commit within {self.config.timeout_s:g} s")
             self._sleep(self.config.poll_s)
+
+
+def from_env() -> DevinApiContestant:
+    """Entry point for `bench compete --contestant devin-api`."""
+    return DevinApiContestant(DevinConfig.from_env())
 
 
 class DevinHealth:
