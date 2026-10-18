@@ -38,6 +38,17 @@ static double trajectory(double t, const double *freq, const double *phase)
     return v * 0.9 * L2_MAX_DEG;
 }
 
+static float expected_command(float previous, float target)
+{
+    float delta = target - previous;
+    if (delta > L2_MAX_STEP_DEG) delta = L2_MAX_STEP_DEG;
+    if (delta < -L2_MAX_STEP_DEG) delta = -L2_MAX_STEP_DEG;
+    float next = previous + delta;
+    if (next > L2_MAX_DEG) next = L2_MAX_DEG;
+    if (next < L2_MIN_DEG) next = L2_MIN_DEG;
+    return next;
+}
+
 static void sleep_until(uint64_t t_ns)
 {
     struct timespec ts = {(time_t)(t_ns / 1000000000ull), (long)(t_ns % 1000000000ull)};
@@ -118,7 +129,8 @@ int main(int argc, char **argv)
     uint64_t period = (uint64_t)L2_PERIOD_MS * 1000000ull;
     uint64_t start = bench_now_ns() + period;
     double error_sum = 0;
-    int acked = 0, missed = 0;
+    int acked = 0, missed = 0, invalid_commands = 0;
+    float previous_command = 0.0f;
 
     for (int t = 0; t < trials; t++) {
         uint64_t tick_at = start + (uint64_t)t * period;
@@ -141,10 +153,21 @@ int main(int argc, char **argv)
             if (bench_now_ns() >= next_tick - 200000ull) /* leave 0.2 ms to log and sleep */
                 break;
         }
+        float cmd = 0.0f;
+        if (response) {
+            cmd = atomic_load(&sh->command_deg);
+            float expected = expected_command(previous_command, target);
+            if (!isfinite(cmd) || cmd < L2_MIN_DEG || cmd > L2_MAX_DEG ||
+                fabsf(cmd - expected) > 0.0001f) {
+                invalid_commands++;
+                /* An acknowledgment without the required command is not a valid response. */
+                response = 0;
+            }
+        }
         bench_log_reaction(&log, t, "tick_ack", published, response, 0);
 
         if (response) {
-            float cmd = atomic_load(&sh->command_deg);
+            previous_command = cmd;
             error_sum += fabs((double)cmd - (double)target);
             acked++;
             servo_out_write(&servo, cmd);
@@ -158,6 +181,7 @@ int main(int argc, char **argv)
 
     bench_log_extra(&log, "angle_error_deg", acked ? error_sum / acked : 0.0);
     bench_log_extra(&log, "missed_ticks", missed);
+    bench_log_extra(&log, "invalid_commands", invalid_commands);
     bench_log_extra(&log, "servo_output", servo.enabled ? 1 : 0);
     bench_log_close(&log);
     servo_out_close(&servo);

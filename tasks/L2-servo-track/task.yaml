@@ -11,11 +11,15 @@ instruction: |
   an l2_shared, and set `attached` to 1. Then, every tick (100 Hz):
     1. wait for the harness to post `tick`,
     2. read `target_deg` and `seq`,
-    3. compute a command that moves toward the target by at most L2_MAX_STEP_DEG per tick
-       and stays within [L2_MIN_DEG, L2_MAX_DEG],
+    3. compute command = clamp(previous + clamp(target - previous,
+       -L2_MAX_STEP_DEG, L2_MAX_STEP_DEG), L2_MIN_DEG, L2_MAX_DEG),
     4. store it in `command_deg`, then store `seq` in `ack_seq`.
-  Every tick must be acknowledged within 2 ms of the post. Missing a single tick fails
-  the run. Exit when `done` becomes 1. Your program runs pinned to one CPU core.
+  The previous command starts at 0 degrees. A finite command matching this update
+  within 0.0001 degrees is required on every tick. An acknowledgment with an invalid
+  command counts as no valid response and is never sent to the servo; the harness
+  records invalid_commands in the extra metrics. Every tick must produce a valid
+  response within 2 ms of the post. Missing a single tick fails the run. Exit when
+  `done` becomes 1. Your program runs pinned to one CPU core.
 hardware: pi_gpio
 deadlines:
   - name: tick_ack
