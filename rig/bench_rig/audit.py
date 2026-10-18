@@ -78,6 +78,8 @@ def _events(data: bytes):
         raise TraceAuditError("only little-endian 16-byte traces are supported")
 
     offset = end + len(marker) + syspage
+    if syspage < 0 or offset > len(data) or (len(data) - offset) % 16:
+        raise TraceAuditError("incomplete QNX trace syspage or event")
     count = (len(data) - offset) // 16
     last = None
     high = 0
@@ -115,6 +117,7 @@ def audit_trace(data: bytes, process_name: str, core: int,
     max_slice = 0.0
     pending_set: dict[int, int] = {}  # cpu -> requested priority awaiting exit
     priorities: list[int] = []
+    last_t = 0.0
 
     def close_slice(cpu: int, t: float) -> None:
         nonlocal off_core, max_slice
@@ -126,6 +129,7 @@ def audit_trace(data: bytes, process_name: str, core: int,
                 max_slice = max(max_slice, length)
 
     for t, cpu, cls, event, d1, d2, payload in _events(data):
+        last_t = max(last_t, t)
         if cls == CLS_PRTH and event == EV_PROCESS_NAME and payload is not None:
             ppid, pid = d1, d2
             name = payload[8:].split(b"\0", 1)[0].decode("latin1", "replace")
@@ -152,6 +156,9 @@ def audit_trace(data: bytes, process_name: str, core: int,
                 requested = pending_set.pop(cpu)
                 if d1 == 0:  # the call succeeded
                     priorities.append(requested)
+
+    for cpu in list(running):
+        close_slice(cpu, last_t)
 
     if not contestant:
         raise TraceAuditError(f"no process named *{process_name} in the trace")

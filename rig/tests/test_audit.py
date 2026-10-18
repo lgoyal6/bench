@@ -91,6 +91,24 @@ def test_timestamp_wrap_is_handled():
     assert audit_trace(data, NAME, CORE).off_core_us == pytest.approx(0x200)
 
 
+def test_off_core_slice_is_counted_through_the_last_trace_event():
+    data = _trace(
+        _process(0, CORE, 1, 100, NAME),
+        _run(10, 1, 100),
+        _ev(5010, CORE, 2, 1),  # another CPU stays active while the contestant runs
+    )
+    result = audit_trace(data, NAME, CORE)
+    assert result.off_core_us == pytest.approx(5000)
+    assert result.max_off_core_slice_us == pytest.approx(5000)
+    assert result.violations == ["ran 5.00 ms off its assigned core 3 (limit 2 ms)"]
+
+
+def test_incomplete_trailing_event_is_an_error():
+    data = _trace(_process(0, CORE, 1, 100, NAME)) + b"incomplete"
+    with pytest.raises(TraceAuditError, match="incomplete"):
+        audit_trace(data, NAME, CORE)
+
+
 def test_bad_trace_and_missing_contestant_are_errors():
     with pytest.raises(TraceAuditError):
         audit_trace(b"stand-in-trace\n", NAME, CORE)
