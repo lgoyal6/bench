@@ -3,6 +3,7 @@ real C tools, task harness and solutions are built and run on this machine. With
 there is no kernel tracer, so the tracer command is a stand-in that writes a file."""
 
 import shutil
+import sys
 import subprocess
 from pathlib import Path
 
@@ -15,7 +16,12 @@ from bench_rig.runner import QnxRig, render_run_script
 from bench_rig.tasks import load_task
 
 FIXTURES = Path(__file__).parent / "fixtures"
-pytestmark = pytest.mark.skipif(shutil.which("cc") is None or shutil.which("make") is None, reason="needs cc and make")
+# The rig tools target QNX and use POSIX calls macOS lacks (clock_nanosleep, sigqueue),
+# so the build-and-run tests only run on Linux, the closest stand-in for the rig.
+needs_linux = pytest.mark.skipif(
+    sys.platform != "linux" or shutil.which("cc") is None or shutil.which("make") is None,
+    reason="builds the QNX rig tools; needs Linux with cc and make",
+)
 
 
 class LocalShell:
@@ -57,6 +63,7 @@ def request(fault_schedule=None):
     )
 
 
+@needs_linux
 def test_reference_solution_passes(rig):
     result = rig.run_source(request(), FIXTURES / "solutions" / "echo-good")
     assert result.verdict == "pass", result.verdict_reason
@@ -67,6 +74,7 @@ def test_reference_solution_passes(rig):
     assert saved.is_file()
 
 
+@needs_linux
 def test_slow_solution_fails(rig):
     result = rig.run_source(request(), FIXTURES / "solutions" / "echo-slow")
     assert result.verdict == "fail"
@@ -74,12 +82,14 @@ def test_slow_solution_fails(rig):
     assert result.metrics.worst_latency_ms >= 50
 
 
+@needs_linux
 def test_solution_that_does_not_build_fails(rig):
     result = rig.run_source(request(), FIXTURES / "solutions" / "echo-nobuild")
     assert result.verdict == "fail"
     assert "did not build" in result.verdict_reason
 
 
+@needs_linux
 def test_fault_schedule_runs_injector(rig):
     schedule = FaultSchedule(
         schedule_id="s1", task_id="L1-echo-test", author="agent1q",
