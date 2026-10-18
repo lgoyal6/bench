@@ -6,11 +6,15 @@
   bench compete --task T --contestant claude-code|devin-api [--attempts 2] [--seed N]
                                      an agent writes the code, the rig grades it, results go back for a retry
   bench replay RUN_DIR               re-score a saved run from its timing log and kernel trace
+
+Tasks with hardware: stackchan run on the StackChan plugged into this Mac (no Pi needed);
+pi_gpio tasks run on the QNX rig configured by BENCH_RIG_*.
   bench doctor --live                every lane's check_live(); non-zero exit on any problem
 """
 
 import argparse
 import hashlib
+import os
 import json
 import random
 import subprocess
@@ -25,11 +29,28 @@ from bench_rig.config import REPO_ROOT, ConfigError
 from bench_rig.faults import FaultScheduleError, validate_execution
 from bench_rig.tasks import list_tasks, load_task
 
+from bench_stackchan.rig import StackChanRig
+
 from .compete import compete
+
+
+def _tasks_dir() -> Path:
+    return Path(os.environ.get("BENCH_TASKS_DIR") or REPO_ROOT / "tasks")
 
 
 def _rig() -> QnxRig:
     return QnxRig(RigConfig.from_env())
+
+
+def _rig_for(task_id: str):
+    """The rig that runs this task: the StackChan on this Mac, or the QNX rig."""
+    if load_task(_tasks_dir(), task_id).hardware == "stackchan":
+        return StackChanRig()
+    return _rig()
+
+
+def _trace_store(rig) -> Path:
+    return rig.trace_store if isinstance(rig, StackChanRig) else rig.config.trace_store
 
 
 def _repo_head() -> Commit:
@@ -41,15 +62,15 @@ def _repo_head() -> Commit:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    rig = _rig()
-    task_ids = list_tasks(rig.config.tasks_dir) if args.all else [args.task]
+    task_ids = list_tasks(_tasks_dir()) if args.all else [args.task]
     if not task_ids:
-        print(f"no tasks in {rig.config.tasks_dir}", file=sys.stderr)
+        print(f"no tasks in {_tasks_dir()}", file=sys.stderr)
         return 1
     commit = _repo_head()
     ok = True
     for task_id in task_ids:
-        task = load_task(rig.config.tasks_dir, task_id)
+        task = load_task(_tasks_dir(), task_id)
+        rig = _rig_for(task_id)
         seed = args.seed if args.seed is not None else random.randrange(2**31)
         for kind, path, expected in (("reference", task.reference_solution, "pass"),
                                      ("broken", task.broken_solution, "fail")):
@@ -72,7 +93,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         seed=args.seed if args.seed is not None else random.randrange(2**31),
         fault_schedule=faults,
     )
-    result = _rig().run(request)
+    result = _rig_for(args.task).run(request)
     print(result.model_dump_json(indent=2))
     return 0 if result.verdict != "error" else 1
 
@@ -80,6 +101,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_replay(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     saved = RunResult.model_validate_json((run_dir / "run_result.json").read_text())
+    if saved.rig_id.startswith("stackchan"):
+        print(f"{saved.run_id}: replay of StackChan runs is not implemented yet", file=sys.stderr)
+        return 2
     tasks_dir = Path(args.tasks_dir) if args.tasks_dir else REPO_ROOT / "tasks"
     task = load_task(tasks_dir, saved.request.task_id)
     timing = (run_dir / "timing.csv").read_bytes()
@@ -122,11 +146,11 @@ def cmd_compete(args: argparse.Namespace) -> int:
         print(f"unknown contestant {args.contestant!r}; installed: {', '.join(sorted(factories)) or 'none'}",
               file=sys.stderr)
         return 2
-    rig = _rig()
+    rig = _rig_for(args.task)
     contestant = factories[args.contestant].load()()
-    task = load_task(rig.config.tasks_dir, args.task)
+    task = load_task(_tasks_dir(), args.task)
     seed = args.seed if args.seed is not None else random.randrange(2**31)
-    record = compete(contestant, rig, task, seed, args.attempts, rig.config.trace_store / "compete")
+    record = compete(contestant, rig, task, seed, args.attempts, _trace_store(rig) / "compete")
     return 0 if record["final_verdict"] != "error" else 1
 
 

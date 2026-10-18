@@ -3,7 +3,7 @@
 Moves the head through four poses and uses the IMU to confirm each move really happened,
 reporting how long after the command the head had turned a few degrees (see motion.py).
 
-    uv run --with pyserial python stackchan/host/check.py [--port /dev/cu.usbmodemXXXX]
+    (cd stackchan && uv run stackchan-check [--port /dev/cu.usbmodemXXXX])
 
 Exits non-zero if the firmware does not answer or any move is not seen by the IMU.
 """
@@ -15,7 +15,7 @@ import time
 
 import serial
 
-from motion import TURN_DEG, parse_imu, turn_onset
+from .motion import TURN_DEG, parse_imu, turn_onset
 
 POSES = [(20, 10), (-20, 10), (0, 30), (0, 10)]  # (yaw, pitch) in degrees
 

@@ -1,7 +1,7 @@
 """Record a seeded StackChan run: head commands at random times, the full IMU stream, and how
 long each command took to turn the head.
 
-    uv run --with pyserial python stackchan/host/record.py --seed 7 --trials 20
+    (cd stackchan && uv run stackchan-record --seed 7 --trials 20)
 
 Writes $BENCH_TRACE_STORE/stackchan/<run_id>/ (default ~/bench-traces/stackchan/<run_id>/):
     serial.log    every line from the StackChan with the Mac's receive time (host monotonic ns)
@@ -27,8 +27,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from link import Link, find_port
-from motion import TURN_DEG, parse_imu, turn_onset
+from .link import Link, find_port
+from .motion import TURN_DEG, parse_imu, turn_onset
 
 YAW_RANGE = (-40.0, 40.0)
 PITCH_RANGE = (8.0, 35.0)

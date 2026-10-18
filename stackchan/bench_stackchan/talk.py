@@ -1,6 +1,6 @@
 """Talk to a StackChan running the Bench firmware.
 
-    uv run --with pyserial python stackchan/host/talk.py [--port /dev/cu.usbmodemXXXX]
+    (cd stackchan && uv run stackchan-talk [--port /dev/cu.usbmodemXXXX])
 
 Type a word and press Enter:
     left, right, up, down, center   move the head
@@ -20,8 +20,8 @@ import argparse
 import sys
 import time
 
-from link import Link, find_port
-from motion import TURN_DEG, parse_imu, turn_onset
+from .link import Link, find_port
+from .motion import TURN_DEG, parse_imu, turn_onset
 
 POSES = {
     "left": (35, 10), "right": (-35, 10), "up": (0, 45), "down": (0, 5), "center": (0, 10),

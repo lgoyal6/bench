@@ -80,7 +80,7 @@ Deliver it like this:
 3. Commit and push the branch.
 4. Report the repository URL and the full commit SHA in the structured output.
 
-You cannot run it on the QNX rig yourself. After the rig runs it you may receive the measured
+You cannot run it on the {"StackChan robot" if task.hardware == "stackchan" else "QNX rig"} yourself. After the rig runs it you may receive the measured
 results in this session; if so, fix the code, push a new commit to the same branch and report
 the new SHA."""
 

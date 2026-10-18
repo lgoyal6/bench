@@ -28,7 +28,7 @@ pio run -t upload --upload-port /dev/cu.usbmodemXXXX
 ## Talk to it
 
 ```
-uv run --with pyserial python stackchan/host/talk.py
+cd stackchan && uv run stackchan-talk
 ```
 
 Type `left`, `right`, `up`, `down`, `center`, `nod`, `shake`, `look <yaw> <pitch>`, `where`,
@@ -38,7 +38,7 @@ Opening the port restarts the StackChan, so the first command waits about 3 seco
 ## Record a run
 
 ```
-uv run --with pyserial python stackchan/host/record.py --seed 7 --trials 20
+cd stackchan && uv run stackchan-record --seed 7 --trials 20
 ```
 
 Sends seeded head targets at random times and saves everything to
@@ -56,26 +56,35 @@ StackChan tasks (`hardware: stackchan` in `task.yaml`) run from this Mac; the co
 `solution` is built and run here, and its moves are forwarded to the robot. The IMU decides.
 
 ```
-# reference must pass, broken must fail
-uv run --with pyserial --with pyyaml --with ./contracts python stackchan/host/run_task.py --task L1-head-reflex --verify --seed 7
-# grade any solution directory
-uv run --with pyserial --with pyyaml --with ./contracts python stackchan/host/run_task.py --task L1-head-reflex --solution path/to/solution --seed 7
+cd cli
+uv run bench verify L1-head-reflex --seed 7          # reference must pass, broken must fail
+uv run bench compete --task L1-head-reflex --contestant claude-code --attempts 2
+# or grade any solution directory directly
+cd ../stackchan && uv run stackchan-task --task L1-head-reflex --solution path/to/solution --seed 7
 ```
 
 Results go to `$BENCH_TRACE_STORE/stackchan-mac-1-.../` with a contract `run_result.json`,
 `imu.csv`, `serial.log`, `stimuli.csv`, `moves.csv`, `trials.csv`, `clock.json`, `build.log`
 and `solution.log`. There is no QNX kernel trace for these runs; `trace_uri` points at
-`serial.log` and the provenance says so. `bench replay` does not handle these runs yet.
+`serial.log` and the provenance says so. `bench replay` does not handle these runs yet. The `bench` CLI picks this rig by the
+task's `hardware` field, so no Pi settings (`BENCH_RIG_*`) are needed; `bench doctor --live`
+checks that the StackChan is connected and healthy.
 
 `L1-head-reflex` verified on the real unit with seeds 7 and 8: the reference met all 21
 targets (slowest 68.3 and 61.7 ms, limit 120 ms; final pose within 3.4 degrees, limit 8)
 with no false triggers; the broken solution missed all 21 (200 ms late) and had 6 and 8
 false triggers.
 
+## Code layout
+
+`bench_stackchan/`: `link.py` (serial), `motion.py` (IMU turn detection), `talk.py`,
+`check.py`, `record.py`, `run_task.py` (task grader) and `rig.py` (the contract `Rig` used by
+the `bench` CLI, plus the doctor check). Unit tests: `cd stackchan && uv run pytest`.
+
 ## Check the hardware
 
 ```
-uv run --with pyserial python stackchan/host/check.py
+cd stackchan && uv run stackchan-check
 ```
 
 ## Restore the stock firmware

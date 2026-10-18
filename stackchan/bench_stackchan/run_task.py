@@ -1,7 +1,8 @@
 """Run a StackChan task (hardware: stackchan) on the real robot from this Mac and grade it.
 
-    uv run --with pyserial --with pyyaml --with ./contracts python stackchan/host/run_task.py \
-        --task L1-head-reflex --solution tasks/L1-head-reflex/reference --seed 7
+    (cd stackchan && uv run stackchan-task --task L1-head-reflex --solution ../tasks/L1-head-reflex/reference --seed 7)
+
+or through the CLI: bench verify L1-head-reflex, bench compete --task L1-head-reflex ...
 
 The contestant's `solution` runs here; its MOVE lines are forwarded to the robot. Timing is
 judged from the robot's IMU, not from anything the solution reports: each stimulus time is
@@ -37,9 +38,9 @@ from pathlib import Path
 import yaml
 from bench_contracts import Commit, ContestantId, Metrics, RunRequest, RunResult, Task
 
-from link import Link, find_port
-from motion import TURN_DEG, parse_imu, turn_onset
-from record import clock_sync
+from .link import Link, find_port
+from .motion import TURN_DEG, parse_imu, turn_onset
+from .record import clock_sync
 
 REPO = Path(__file__).resolve().parents[2]
 RIG_ID = "stackchan-mac-1"
@@ -147,12 +148,12 @@ def read_pose(link: Link) -> tuple[float, float] | None:
     return float(p[2]), float(p[3])
 
 
-def run(task: Task, solution_dir: Path, seed: int, contestant: ContestantId, store: Path, port: str) -> RunResult:
+def run(task: Task, solution_dir: Path, request: RunRequest, store: Path, port: str) -> RunResult:
     run_id = f"{RIG_ID}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
     out = store / run_id
     out.mkdir(parents=True)
     started = datetime.now(timezone.utc)
-    request = RunRequest(task_id=task.id, contestant=contestant, commit=repo_commit(), seed=seed)
+    seed = request.seed
 
     def result(metrics: Metrics, verdict: str, reason: str, provenance: dict[str, str]) -> RunResult:
         log = out / "serial.log"
@@ -332,7 +333,9 @@ def main() -> int:
     if args.verify:
         ok = True
         for name, path, want in (("reference", task.reference_solution, "pass"), ("broken", task.broken_solution, "fail")):
-            r = run(task, REPO / path, args.seed, ContestantId(agent=name, model=name), store, port)
+            request = RunRequest(task_id=task.id, contestant=ContestantId(agent=name, model=name),
+                                 commit=repo_commit(), seed=args.seed)
+            r = run(task, REPO / path, request, store, port)
             good = r.verdict == want
             ok &= good
             print(f"{'ok  ' if good else 'FAIL'} {task.id} {name:9s} {r.verdict:5s} (expected {want}) "
@@ -341,7 +344,9 @@ def main() -> int:
 
     if not args.solution:
         parser.error("--solution is required unless --verify is given")
-    r = run(task, Path(args.solution).resolve(), args.seed, ContestantId(agent=args.agent, model=args.model), store, port)
+    request = RunRequest(task_id=task.id, contestant=ContestantId(agent=args.agent, model=args.model),
+                         commit=repo_commit(), seed=args.seed)
+    r = run(task, Path(args.solution).resolve(), request, store, port)
     print(f"{r.verdict} run={r.run_id}: {r.verdict_reason}")
     return 0 if r.verdict == "pass" else 1
 

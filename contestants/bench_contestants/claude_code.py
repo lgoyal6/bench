@@ -65,13 +65,15 @@ class ClaudeCodeConfig:
 
 
 def task_prompt(task: Task) -> str:
+    headers = ", with `-I../harness` in the compiler flags" if interface_headers(task) else ""
+    where = "with the StackChan robot" if task.hardware == "stackchan" else "on the QNX rig"
     return f"""{task_brief(task)}
 
 Deliver it like this:
 1. Your current directory is the solution repository. Write the solution here so that `make`
-   builds `./solution`, with `-I../harness` in the compiler flags.
+   builds `./solution`{headers}.
 2. Only edit files in this directory. You cannot run commands; Bench builds and runs your code
-   on the QNX rig and commits whatever you leave here.
+   {where} and commits whatever you leave here.
 3. When you are done, reply with one short paragraph describing your approach.
 
 After the rig runs it you may receive the measured results in this conversation; if so, fix the

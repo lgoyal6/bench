@@ -1,0 +1,28 @@
+[project]
+name = "bench-stackchan"
+version = "0.1.0"
+description = "StackChan rig for Bench: firmware link, IMU-graded tasks run from the Mac"
+requires-python = ">=3.10"
+dependencies = ["bench-contracts", "pyserial>=3.5", "pyyaml>=6"]
+
+[project.scripts]
+stackchan-talk = "bench_stackchan.talk:main"
+stackchan-check = "bench_stackchan.check:main"
+stackchan-record = "bench_stackchan.record:main"
+stackchan-task = "bench_stackchan.run_task:main"
+
+[project.entry-points."bench.healthchecks"]
+stackchan = "bench_stackchan.rig:StackChanHealth"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv.sources]
+bench-contracts = { path = "../contracts", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bench_stackchan"]
