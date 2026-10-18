@@ -7,6 +7,8 @@ Format, confirmed on the Pi 5 QSTI against sys/trace.h and real runs:
     TRACE_CYCLES_PER_SEC counter), data1, data2
   - header bits: event 0-9, class 10-14, CPU 24-29, combine state 30-31
     (0 single event, 1 begin, 2 continue, 3 end of a multi-event payload)
+  - events sit in per-CPU buffers, so the file is in time order per CPU but not across
+    CPUs; the audit sorts by timestamp before following the scheduler
 
 Events used:
   - class 4 (process/thread), event 192: process name; payload ppid, pid, name at offset 8
@@ -81,18 +83,18 @@ def _events(data: bytes):
     if syspage < 0 or offset > len(data) or (len(data) - offset) % 16:
         raise TraceAuditError("incomplete QNX trace syspage or event")
     count = (len(data) - offset) // 16
-    last = None
-    high = 0
+    last: dict[int, int] = {}  # per CPU: the counter only runs forward within one CPU's buffer
+    high: dict[int, int] = {}
     pending: dict[tuple[int, int, int], tuple[float, list[int]]] = {}
     for header_word, ts, d1, d2 in struct.iter_unpack("<4I", data[offset:offset + count * 16]):
-        if last is not None and ts < last and last - ts > 1 << 31:
-            high += 1 << 32
-        last = ts
-        t = (high + ts) / cycles
         cls = (header_word >> 10) & 0x1F
         event = header_word & 0x3FF
         cpu = (header_word >> 24) & 0x3F
         state = header_word >> 30
+        if cpu in last and ts < last[cpu] and last[cpu] - ts > 1 << 31:
+            high[cpu] = high.get(cpu, 0) + (1 << 32)
+        last[cpu] = ts
+        t = (high.get(cpu, 0) + ts) / cycles
         if state == 0:
             yield t, cpu, cls, event, d1, d2, None
             continue
@@ -128,7 +130,8 @@ def audit_trace(data: bytes, process_name: str, core: int,
                 off_core += length
                 max_slice = max(max_slice, length)
 
-    for t, cpu, cls, event, d1, d2, payload in _events(data):
+    # stable sort: events with equal timestamps keep their file (per-CPU) order
+    for t, cpu, cls, event, d1, d2, payload in sorted(_events(data), key=lambda e: e[0]):
         last_t = max(last_t, t)
         if cls == CLS_PRTH and event == EV_PROCESS_NAME and payload is not None:
             ppid, pid = d1, d2
