@@ -7,8 +7,8 @@ timestamped IMU readings over USB serial, with no Wi-Fi or cloud in the loop.
 
 - Head control works: both Feetech SCS servos (IDs 1 and 2) move on command.
 - IMU works: BMI270 streams about 160-170 samples/s, each with an `esp_timer` microsecond stamp.
-- `host/check.py` and `host/talk.py`: every move seen by the IMU. Moves are timed as
-  "head has turned 3 degrees", found by integrating the gyro (see `host/motion.py`);
+- `stackchan-check` and `stackchan-talk`: every move seen by the IMU. Moves are timed as
+  "head has turned 3 degrees", found by integrating the gyro (see `bench_stackchan/motion.py`);
   measured 32-44 ms after the command.
 - The head vibrates while the servos hold position (gyro about 70 deg/s at rest, 0.3 g);
   treated as normal pitch variance. The integrated-turn timing is not fooled by it.
