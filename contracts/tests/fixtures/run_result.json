@@ -1,0 +1,28 @@
+{
+  "run_id": "run-0001",
+  "rig_id": "rig-1",
+  "request": {
+    "task_id": "L1-name-turn",
+    "contestant": {"agent": "devin", "model": "opus"},
+    "commit": {"repo": "https://github.com/lgoyal6/bench-submissions.git", "sha": "abc1234"},
+    "seed": 42,
+    "fault_schedule": null,
+    "stated_confidence": 0.7
+  },
+  "started_at": "2026-10-18T09:00:00Z",
+  "finished_at": "2026-10-18T09:02:10Z",
+  "metrics": {
+    "trials": 20,
+    "deadline_hit_rate": 0.85,
+    "worst_latency_ms": 410.0,
+    "p99_latency_ms": 395.0,
+    "false_triggers": 0,
+    "fault_survived": null,
+    "extra": {}
+  },
+  "verdict": "fail",
+  "verdict_reason": "worst_latency_ms 410 exceeds name_to_head_motion deadline 300",
+  "trace_uri": "traces/run-0001.kev",
+  "imu_uri": "imu/run-0001.csv",
+  "provenance": {"devin_session_url": "https://app.devin.ai/sessions/example"}
+}

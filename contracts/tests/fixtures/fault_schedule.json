@@ -1,0 +1,9 @@
+{
+  "schedule_id": "chaos-0001",
+  "task_id": "L5-driver-recovery",
+  "author": "agent1qexamplechaosaddress",
+  "events": [
+    {"at_ms": 3200, "kind": "kill_driver", "target": "servo_driver", "duration_ms": null, "params": {}},
+    {"at_ms": 5000, "kind": "cpu_hog", "target": "background", "duration_ms": 1500, "params": {"load_pct": 80}}
+  ]
+}

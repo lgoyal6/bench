@@ -1,0 +1,97 @@
+{
+  "$defs": {
+    "FaultEvent": {
+      "properties": {
+        "at_ms": {
+          "description": "Offset from run start",
+          "minimum": 0,
+          "title": "At Ms",
+          "type": "number"
+        },
+        "kind": {
+          "enum": [
+            "kill_driver",
+            "stop_sensor",
+            "cpu_hog",
+            "corrupt_bytes"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "description": "Process, sensor or bus name, e.g. 'servo_driver'",
+          "title": "Target",
+          "type": "string"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None means instantaneous",
+          "title": "Duration Ms"
+        },
+        "params": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "at_ms",
+        "kind",
+        "target"
+      ],
+      "title": "FaultEvent",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schedule_id": {
+      "title": "Schedule Id",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "author": {
+      "description": "Agentverse address of the agent that wrote it",
+      "title": "Author",
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/FaultEvent"
+      },
+      "title": "Events",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schedule_id",
+    "task_id",
+    "author",
+    "events"
+  ],
+  "title": "FaultSchedule",
+  "type": "object"
+}

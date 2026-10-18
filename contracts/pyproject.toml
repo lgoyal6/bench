@@ -1,0 +1,16 @@
+[project]
+name = "bench-contracts"
+version = "0.1.0"
+description = "Shared formats and interfaces between Bench's rig lane and market lane"
+requires-python = ">=3.10"
+dependencies = ["pydantic>=2.6"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bench_contracts"]

@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "Metrics": {
+      "properties": {
+        "trials": {
+          "minimum": 0,
+          "title": "Trials",
+          "type": "integer"
+        },
+        "deadline_hit_rate": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Deadline Hit Rate",
+          "type": "number"
+        },
+        "worst_latency_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worst Latency Ms"
+        },
+        "p99_latency_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P99 Latency Ms"
+        },
+        "false_triggers": {
+          "default": 0,
+          "minimum": 0,
+          "title": "False Triggers",
+          "type": "integer"
+        },
+        "fault_survived": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fault Survived"
+        },
+        "extra": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Task-specific metrics",
+          "title": "Extra",
+          "type": "object"
+        }
+      },
+      "required": [
+        "trials",
+        "deadline_hit_rate"
+      ],
+      "title": "Metrics",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail",
+        "error"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    },
+    "metrics": {
+      "$ref": "#/$defs/Metrics"
+    },
+    "trace_uri": {
+      "title": "Trace Uri",
+      "type": "string"
+    }
+  },
+  "required": [
+    "job_id",
+    "run_id",
+    "verdict",
+    "metrics",
+    "trace_uri"
+  ],
+  "title": "Verdict",
+  "type": "object"
+}

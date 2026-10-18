@@ -1,0 +1,20 @@
+{
+  "id": "L1-name-turn",
+  "level": 1,
+  "title": "Turn toward a spoken name",
+  "instruction": "When someone says 'StackChan', start turning the head toward the speaker within 300 ms. Do not move in rounds where nobody speaks.",
+  "hardware": "stackchan",
+  "deadlines": [{"name": "name_to_head_motion", "max_ms": 300}],
+  "metrics": ["deadline_hit_rate", "worst_latency_ms", "p99_latency_ms", "false_triggers"],
+  "trials": 20,
+  "cpu_budget_pct": 40,
+  "randomized": {
+    "stimulus_delay_ms": [500, 4000],
+    "directions": ["left", "right"],
+    "silent_round_ratio": 0.2,
+    "allowed_faults": []
+  },
+  "reference_solution": "tasks/L1-name-turn/reference",
+  "broken_solution": "tasks/L1-name-turn/broken",
+  "held_out": false
+}

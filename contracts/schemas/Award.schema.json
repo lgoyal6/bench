@@ -1,0 +1,45 @@
+{
+  "$defs": {
+    "Contestant": {
+      "properties": {
+        "agent": {
+          "description": "e.g. 'devin', 'step-5-preview', 'veri-open-model'",
+          "title": "Agent",
+          "type": "string"
+        },
+        "model": {
+          "description": "e.g. 'opus', 'swe', 'gpt'; same as agent when not applicable",
+          "title": "Model",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "model"
+      ],
+      "title": "Contestant",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "contestant": {
+      "$ref": "#/$defs/Contestant"
+    },
+    "bond_payment_id": {
+      "description": "Payment Protocol transaction ID of the bond hold",
+      "title": "Bond Payment Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "job_id",
+    "contestant",
+    "bond_payment_id"
+  ],
+  "title": "Award",
+  "type": "object"
+}
