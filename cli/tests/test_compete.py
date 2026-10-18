@@ -61,3 +61,32 @@ def test_attempt_limit_is_respected(tmp_path):
     agent, rig = Agent(), Rig(["fail", "fail"])
     record = compete(agent, rig, TASK, seed=1, attempts=2, record_dir=tmp_path, log=lambda _: None)
     assert record["final_verdict"] == "fail" and len(record["attempts"]) == 2
+
+
+class SilentRetryAgent(Agent):
+    """Submits once, then produces no retry commit (as the Devin session did on 2026-10-18)."""
+
+    def feedback(self, submission, result):
+        raise RuntimeError("session reported no new commit within 2700 s")
+
+
+class NoSubmissionAgent(Agent):
+    def submit(self, task, job_id):
+        raise RuntimeError("agent crashed")
+
+
+def test_missing_retry_commit_keeps_last_verdict_and_writes_record(tmp_path):
+    record = compete(SilentRetryAgent(), Rig(["fail"]), TASK, seed=3, attempts=2, record_dir=tmp_path,
+                     log=lambda _: None)
+    assert record["final_verdict"] == "fail"
+    assert [a["verdict"] for a in record["attempts"]] == ["fail", "error"]
+    assert "no retry commit" in record["attempts"][1]["verdict_reason"]
+    saved = json.loads((tmp_path / f"{record['job_id']}.json").read_text())
+    assert saved["final_verdict"] == "fail"
+
+
+def test_no_submission_is_an_error_not_charged_to_the_rig(tmp_path):
+    rig = Rig([])
+    record = compete(NoSubmissionAgent(), rig, TASK, seed=3, attempts=2, record_dir=tmp_path, log=lambda _: None)
+    assert record["final_verdict"] == "error" and rig.requests == []
+    assert json.loads((tmp_path / f"{record['job_id']}.json").read_text())["final_verdict"] == "error"

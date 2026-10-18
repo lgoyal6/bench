@@ -149,7 +149,8 @@ class QnxRig:
                 _checkout(request.commit.repo, request.commit.sha, source)
             except (RemoteError, subprocess.TimeoutExpired) as e:
                 (out / "run.log").write_text(f"{e}\n")
-                return finish(empty, "fail", f"commit could not be fetched: {e}", out / "run.log", {})
+                # The rig could not get the code: a setup problem, not charged to the contestant.
+                return finish(empty, "error", f"commit could not be fetched: {e}", out / "run.log", {})
         try:
             self._stage_and_build(task, source, request.fault_schedule, request.seed, out)
         except SolutionBuildFailed as e:

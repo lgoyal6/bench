@@ -26,12 +26,21 @@ def compete(contestant: Contestant, rig: Rig, task: Task, seed: int, attempts: i
     record_dir.mkdir(parents=True, exist_ok=True)
 
     log(f"{job_id}: {contestant.id.agent} ({contestant.id.model}) is writing {task.id}...")
-    submission = contestant.submit(task, job_id)
+    try:
+        submission = contestant.submit(task, job_id)
+    except Exception as e:  # the agent produced no commit; nothing to grade
+        return _contestant_error(record, path, job_id, 1, f"contestant produced no submission: {e}", log)
     result: RunResult | None = None
     for attempt in range(1, attempts + 1):
         if attempt > 1:
             log(f"{job_id}: sending the trace back for attempt {attempt}...")
-            submission = contestant.feedback(submission, result)
+            try:
+                submission = contestant.feedback(submission, result)
+            except Exception as e:  # no retry commit; the last graded attempt stands
+                record["attempts"].append({"attempt": attempt, "verdict": "error",
+                                           "verdict_reason": f"contestant produced no retry commit: {e}"})
+                log(f"{job_id}: attempt {attempt}: no retry commit ({e}); keeping attempt {attempt - 1}'s verdict")
+                break
         log(f"{job_id}: attempt {attempt}, commit {submission.commit.sha[:10]}, running on the rig...")
         result = rig.run(RunRequest(task_id=task.id, contestant=submission.contestant,
                                     commit=submission.commit, seed=seed))
@@ -52,4 +61,13 @@ def compete(contestant: Contestant, rig: Rig, task: Task, seed: int, attempts: i
     record["final_verdict"] = result.verdict
     path.write_text(json.dumps(record, indent=2))
     log(f"{job_id}: final verdict {result.verdict.upper()} after {len(record['attempts'])} attempt(s); record at {path}")
+    return record
+
+
+def _contestant_error(record: dict, path: Path, job_id: str, attempt: int, reason: str,
+                      log: Callable[[str], None]) -> dict:
+    record["attempts"].append({"attempt": attempt, "verdict": "error", "verdict_reason": reason})
+    record["final_verdict"] = "error"
+    path.write_text(json.dumps(record, indent=2))
+    log(f"{job_id}: {reason}; final verdict ERROR; record at {path}")
     return record
