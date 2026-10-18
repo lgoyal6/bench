@@ -4,6 +4,14 @@ Read [AGENTS.md](../AGENTS.md) first. You may edit only `rig/`, `tasks/`, `stimu
 
 Phases are ordered by risk. Each ends with a check that must pass on real hardware and real services.
 
+## Findings so far (check on hardware where marked)
+
+- **No CPU budgets on QNX 8.0.** QNX's 8.0 IDE guide states the OS does not support adaptive partitioning, and the Pi 5 image is SDP 8.0. The rig isolates by core instead: the contestant is pinned to its own core (`on -C 3`), the harness to another, at fixed priorities. `Task.cpu_budget_pct` is therefore not enforced; a contract change (rename to a core/priority spec, or drop it) needs a shared PR with Laksh.
+- **whisper.cpp cannot meet L1's 300 ms deadline on a Pi 5.** Reported Whisper-tiny latency there is seconds, and the latency would be the model's, not the contestant's. Plan: keyword spotting for detection, and L1's deadline timed from the detection event to head motion. Needs a decision before L1 is built.
+- **QNX Developer Desktop on Pi 5** (on-device GCC/Clang/CMake) shipped March 2026, not January.
+- **Pass rule.** The rig passes a run only if every deadline is met. A per-task threshold field in `Task` would need a contract change.
+- To verify on the Pi: `tracelogger` flags, `on -p` syntax, `slay -f`, compiler name. `bench doctor --live` checks the tools are present.
+
 ## T0: contracts (with Laksh)
 
 Agree and freeze everything in `contracts/` listed in [BUILD_PLAN.md](../BUILD_PLAN.md). Implement nothing until it is merged.
@@ -13,10 +21,10 @@ Agree and freeze everything in `contracts/` listed in [BUILD_PLAN.md](../BUILD_P
 1. Flash the QNX Everywhere Pi 5 Quick Start Target Image; boot with official 27W power, network, HDMI and keyboard.
 2. Check what the image supports: on-device compilation (QNX Developer Desktop), guaranteed CPU budgets (adaptive partitioning, UNVERIFIED), the kernel event tracer, and a whisper.cpp build from [qnx-ports](https://github.com/qnx-ports). Record findings in this file.
 3. Wire a servo to a GPIO PWM pin with its own 5V supply and a shared ground.
-4. `rig/`: runner that pulls a commit, builds on the device, launches it in its own CPU budget and records the kernel trace.
-5. `rig/`: fault injector (kill a driver process, stop a sensor stream, CPU hog, corrupted bytes) that reads the shared fault schedule format.
-6. `rig/`: calibrate with the cyclictest-style latency method; publish the rig's baseline.
-7. `rig/`: trace to metrics (deadline-hit rate, worst-case, p99) emitting `run_result.json`.
+4. `rig/`: runner that pulls a commit, builds on the device, launches it on its own core and records the kernel trace. *(Code done: `rig/bench_rig/runner.py`; needs a run on the Pi.)*
+5. `rig/`: fault injector (kill a driver process, stop a sensor stream, CPU hog, corrupted bytes) that reads the shared fault schedule format. *(Code done: `rig/harness/injector.c`.)*
+6. `rig/`: calibrate with the cyclictest-style latency method; publish the rig's baseline. *(Tool done: `rig/harness/rtlatency`; baseline needs the Pi.)*
+7. `rig/`: trace to metrics (deadline-hit rate, worst-case, p99) emitting `run_result.json`. *(Code done: metrics from the harness timing log, cross-checkable against kernel trace user events.)*
 
 Check: `bench verify L2-servo` passes the reference solution and fails the broken one, with both real traces saved. If QNX cannot build on the device or isolate runs, stop and tell Laksh before going further.
 

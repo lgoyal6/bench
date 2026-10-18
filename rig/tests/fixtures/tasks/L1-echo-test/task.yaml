@@ -1,0 +1,20 @@
+# Test-only task: the harness writes a byte to a FIFO and times the echo.
+id: L1-echo-test
+level: 1
+title: Echo test (unit tests only)
+instruction: Read each byte from the stim FIFO and write it back to the resp FIFO within 20 ms.
+hardware: pi_gpio
+deadlines:
+  - name: echo
+    max_ms: 20
+metrics: [deadline_hit_rate, worst_latency_ms, p99_latency_ms]
+trials: 10
+cpu_budget_pct: 50
+randomized:
+  stimulus_delay_ms: [5, 15]
+  directions: []
+  silent_round_ratio: 0
+  allowed_faults: [cpu_hog]
+reference_solution: tests/fixtures/solutions/echo-good
+broken_solution: tests/fixtures/solutions/echo-slow
+held_out: false
