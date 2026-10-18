@@ -21,6 +21,16 @@ cd stackchan/firmware
 pio run -t upload --upload-port /dev/cu.usbmodemXXXX
 ```
 
+## Talk to it
+
+```
+uv run --with pyserial python stackchan/host/talk.py
+```
+
+Type `left`, `right`, `up`, `down`, `center`, `nod`, `shake`, `look <yaw> <pitch>`, `where`,
+`tilt`, `relax`, `stiff`, `ping` or `quit`. Each move reports whether the IMU saw the head move.
+Opening the port restarts the StackChan, so the first command waits about 3 seconds.
+
 ## Check the hardware
 
 ```
