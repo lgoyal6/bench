@@ -92,3 +92,22 @@ def test_l2_reference_beats_broken(tmp_path):
     assert bad.verdict == "fail"
     assert good.metrics.extra["servo_output"] == 0.0
     assert good.metrics.extra["angle_error_deg"] < 15
+
+
+@pytest.mark.skipif(sys.platform != "linux" or shutil.which("cc") is None,
+                    reason="builds QNX task harnesses; needs Linux with cc")
+@pytest.mark.parametrize("command", ["0.0f", "NAN", "1000.0f", "-target", "step_toward(command, target) + 0.25f"])
+def test_l2_rejects_invalid_commands_despite_prompt_acknowledgments(tmp_path, command):
+    tasks_dir = _short_copy(tmp_path, "L2-servo-track", trials=30)
+    source = tmp_path / "invalid-controller"
+    shutil.copytree(TASKS / "L2-servo-track/reference", source)
+    code = source / "controller.c"
+    text = code.read_text().replace(
+        "command = step_toward(command, atomic_load(&sh->target_deg));",
+        f"float target = atomic_load(&sh->target_deg);\n        command = {command};",
+    )
+    code.write_text(text)
+    result = _run(tmp_path / "run", tasks_dir, "L2-servo-track", source)
+    assert result.verdict == "fail", result.verdict_reason
+    assert result.metrics.extra.get("invalid_commands", 0) > 0
+    assert result.metrics.deadline_hit_rate < 1
