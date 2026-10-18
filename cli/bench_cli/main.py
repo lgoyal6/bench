@@ -10,6 +10,8 @@
 
 Tasks with hardware: stackchan run on the StackChan plugged into this Mac (no Pi needed);
 pi_gpio tasks run on the QNX rig configured by BENCH_RIG_*.
+  bench repeat TASK [--solution reference|broken|DIR] [--runs 5] [--seed 100]
+                                     same code over several seeds, with 95% confidence intervals
   bench doctor --live                every lane's check_live(); non-zero exit on any problem
 """
 
@@ -34,6 +36,7 @@ from bench_stackchan.replay import replay as replay_stackchan
 from bench_stackchan.rig import StackChanRig
 
 from .compete import compete
+from .repeat import repeat
 
 
 def _tasks_dir() -> Path:
@@ -166,6 +169,24 @@ def cmd_compete(args: argparse.Namespace) -> int:
     return 0 if record["final_verdict"] != "error" else 1
 
 
+def cmd_repeat(args: argparse.Namespace) -> int:
+    task = load_task(_tasks_dir(), args.task)
+    rig = _rig_for(args.task)
+    which = {"reference": task.reference_solution, "broken": task.broken_solution}
+    source = REPO_ROOT / which[args.solution] if args.solution in which else Path(args.solution).resolve()
+    name = args.solution if args.solution in which else "local"
+    commit = _repo_head()
+
+    def make_request(seed: int) -> RunRequest:
+        return RunRequest(task_id=task.id, contestant=ContestantId(agent=name, model=name), commit=commit, seed=seed)
+
+    seeds = list(range(args.seed, args.seed + args.runs))
+    summary = repeat(rig, make_request, lambda req: rig.run_source(req, source), seeds,
+                     _trace_store(rig) / "repeat")
+    print(json.dumps({k: summary[k] for k in ("pass_rate", "worst_latency_ms", "p99_latency_ms")}, indent=2))
+    return 0 if summary["errors"] == 0 else 1
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     if not args.live:
         print("use: bench doctor --live", file=sys.stderr)
@@ -218,6 +239,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--attempts", type=int, default=2, help="including retries after feedback")
     p.add_argument("--seed", type=int)
     p.set_defaults(func=cmd_compete)
+
+    p = sub.add_parser("repeat", help="run one solution over several seeds; report confidence intervals")
+    p.add_argument("task")
+    p.add_argument("--solution", default="reference", help="reference, broken, or a solution directory")
+    p.add_argument("--runs", type=int, default=5)
+    p.add_argument("--seed", type=int, default=100, help="first seed; runs use seed, seed+1, ...")
+    p.set_defaults(func=cmd_repeat)
 
     p = sub.add_parser("doctor", help="check every live integration")
     p.add_argument("--live", action="store_true")
