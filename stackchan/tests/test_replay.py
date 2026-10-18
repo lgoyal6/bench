@@ -31,7 +31,7 @@ def _write_run(tmp_path, react=True):
         moving = any(start <= us < start + 100_000 for start in turn_starts)
         imu.append((us, (0.0, 0.0, 200.0 if moving else 0.0)))
     with open(tmp_path / "stimuli.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["seq", "delay_s", "silent", "yaw", "pitch", "host_ns", "pose_before_next"])
+        w = csv.DictWriter(f, fieldnames=["seq", "delay_s", "silent", "yaw", "pitch", "host_ns", "pose_before_next", "kind", "line"], extrasaction="ignore")
         w.writeheader()
         w.writerows(stimuli)
     with open(tmp_path / "imu.csv", "w", newline="") as f:

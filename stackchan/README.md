@@ -91,6 +91,19 @@ in `bench_stackchan/run_task.py`). Verified with seeds 7, 8, 9: the reference (a
 ramp) passes, with the slowest start at 188-192 ms and peak speed 76-90 deg/s; the broken
 snapping solution fails at 337-350 deg/s. The peak-speed margin is about 10%.
 
+## L5-head-robust
+
+A robustness task: L1's timing, but about 30% of rounds are invalid lines (missing or extra
+fields, wrong keyword or case, non-numbers, nan/inf, out-of-range angles, 300-character junk)
+that must not move the head. Verified with seeds 7 and 8: the strict-parser reference passes
+(18/18 and 24/24 targets, slowest 71.5 and 62.7 ms); the lenient L1 parser fails by obeying
+8 and 2 bad lines.
+
+Safety: the grader never forwards a non-finite MOVE, and firmware v4 rejects non-finite head
+commands. Before v4 a NaN command drove the head to yaw -124, pitch -7 (inside the servo's raw
+limits but far outside the task range); this happened once during testing and the head was
+returned to centre with no damage seen.
+
 ## Check the hardware
 
 ```

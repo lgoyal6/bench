@@ -32,6 +32,7 @@ def _stimuli(path: Path) -> list[dict]:
             "yaw": float(r["yaw"]) if r["yaw"] else None, "pitch": float(r["pitch"]) if r["pitch"] else None,
             "host_ns": int(r["host_ns"]) if r["host_ns"] else None,
             "pose_before_next": ast.literal_eval(r["pose_before_next"]) if r["pose_before_next"] else None,
+            "kind": r.get("kind") or None, "line": r.get("line") or None,
         })
     return out
 

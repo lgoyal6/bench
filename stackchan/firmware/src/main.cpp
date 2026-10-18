@@ -29,7 +29,7 @@
 
 #include "SCSCL.h"
 
-static constexpr const char* FW_VERSION = "bench-stackchan 3";
+static constexpr const char* FW_VERSION = "bench-stackchan 4";
 
 // Zero positions read from this unit's stock firmware log (NVS servo/zero_pos_1 and _2).
 static constexpr int YAW_ID = 1, PITCH_ID = 2;
@@ -126,6 +126,10 @@ static void handle_line(char* line)
         float yaw, pitch;
         if (sscanf(line + 1, "%lu %f %f", &seq, &yaw, &pitch) != 3) {
             Serial.println("E bad H, want: H <seq> <yaw> <pitch>");
+            return;
+        }
+        if (!isfinite(yaw) || !isfinite(pitch)) {  // NaN would map to an extreme raw position
+            Serial.printf("E rejected non-finite H %lu\n", seq);
             return;
         }
         if (!servo_power) {

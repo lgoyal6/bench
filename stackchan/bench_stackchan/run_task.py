@@ -23,6 +23,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import os
 import random
 import shutil
@@ -51,12 +52,15 @@ MAX_MOVES_PER_S = 100
 # Grading parameters per task; they match each task.yaml instruction.
 TASK_SPECS = {
     "L1-head-reflex": {"max_step_deg": None, "pose_tolerance_deg": 8.0, "speed_limit_dps": None,
-                       "speed_window_us": 100_000, "hold_turn_deg": TURN_DEG},
+                       "speed_window_us": 100_000, "hold_turn_deg": TURN_DEG, "corrupt_ratio": 0.0},
     # Measured on the robot: a 60 deg/s ramp needs 110-180 ms to show 3 degrees (the servo has
     # a 2-3 degree dead zone) and peaks near 100 deg/s over 50 ms (it sticks, then catches up),
     # while settling can wobble the head about 2 degrees. Hence 250 ms, 100 ms and 5 degrees.
     "L6-head-speed-limit": {"max_step_deg": 40.0, "pose_tolerance_deg": 6.0, "speed_limit_dps": 100.0,
-                            "speed_window_us": 100_000, "hold_turn_deg": 5.0},
+                            "speed_window_us": 100_000, "hold_turn_deg": 5.0, "corrupt_ratio": 0.0},
+    # Robustness: L1's timing, plus malformed and out-of-range lines that must not move the head.
+    "L5-head-robust": {"max_step_deg": None, "pose_tolerance_deg": 8.0, "speed_limit_dps": None,
+                       "speed_window_us": 100_000, "hold_turn_deg": 5.0, "corrupt_ratio": 0.3},
 }
 HOME = (0.0, 10.0)
 
@@ -78,12 +82,19 @@ def schedule(task: Task, seed: int) -> list[dict]:
     rng = random.Random(seed)
     max_step = spec(task)["max_step_deg"]
     lo, hi = task.randomized.stimulus_delay_ms
+    corrupt_ratio = spec(task)["corrupt_ratio"]
     out, last = [], HOME
     for i in range(task.trials):
         silent = rng.random() < task.randomized.silent_round_ratio
-        step = {"seq": i + 1, "delay_s": round(rng.uniform(lo, hi) / 1000, 3), "silent": silent,
+        # Draw only when the task has corrupt rounds, so other tasks keep their seeded schedules.
+        corrupt = not silent and corrupt_ratio > 0 and rng.random() < corrupt_ratio
+        step = {"seq": i + 1, "delay_s": round(rng.uniform(lo, hi) / 1000, 3), "silent": silent or corrupt,
                 "yaw": None, "pitch": None}
-        if not silent:
+        if corrupt:
+            step["kind"], step["line"] = "corrupt", corrupt_line(rng, i + 1, last)
+        elif silent:
+            step["kind"] = "hold"
+        if not step["silent"]:
             while True:
                 yaw, pitch = round(rng.uniform(*YAW_RANGE), 1), round(rng.uniform(*PITCH_RANGE), 1)
                 step_size = max(abs(yaw - last[0]), abs(pitch - last[1]))
@@ -93,6 +104,29 @@ def schedule(task: Task, seed: int) -> list[dict]:
             last = (yaw, pitch)
         out.append(step)
     return out
+
+
+def corrupt_line(rng: random.Random, seq: int, last: tuple[float, float]) -> str:
+    """A line a robust solution must ignore. Where it names a pose, that pose is at least 15 degrees
+    from the current one, so obeying it would visibly move the head."""
+    while True:
+        yaw, pitch = round(rng.uniform(*YAW_RANGE), 1), round(rng.uniform(*PITCH_RANGE), 1)
+        if max(abs(yaw - last[0]), abs(pitch - last[1])) >= 15:
+            break
+    out_yaw = round(rng.choice([-1, 1]) * rng.uniform(55, 90), 1)
+    out_pitch = round(rng.choice([rng.uniform(-15, 0), rng.uniform(50, 80)]), 1)
+    return rng.choice([
+        f"TARGET {seq} {yaw}",                      # missing a field
+        f"TARGET {seq} {yaw} {pitch} 7",            # extra field
+        f"TARGET {seq} x{yaw} {pitch}",             # not a number
+        f"TARGT {seq} {yaw} {pitch}",               # bad keyword
+        f"target {seq} {yaw} {pitch}",              # wrong case
+        f"TARGET {seq} {out_yaw} {pitch}",          # yaw out of range
+        f"TARGET {seq} {yaw} {out_pitch}",          # pitch out of range
+        f"TARGET {seq} nan {pitch}",                # not finite
+        f"TARGET {seq} {yaw} inf",                  # not finite
+        "#" * 300,                                  # junk longer than a typical line buffer
+    ])
 
 
 def sha256(path: Path) -> str:
@@ -127,6 +161,8 @@ class SolutionProcess:
                 if len(parts) != 3 or parts[0] != "MOVE":
                     raise ValueError
                 yaw, pitch = float(parts[1]), float(parts[2])
+                if not (math.isfinite(yaw) and math.isfinite(pitch)):  # never sent to the servos
+                    raise ValueError
             except ValueError:
                 self.invalid += 1
                 continue
@@ -191,11 +227,12 @@ def grade(task: Task, stimuli: list[dict], imu, move_times: list[int], offset: f
                "turn_ms": None if onset is None else round(onset, 2), "peak_dps": round(peak, 1),
                "pose_error_deg": None, "result": ""}
         if s["silent"]:
+            corrupt = s.get("kind") == "corrupt"
             if onset is not None:
                 false_triggers += 1
-                row["result"] = "false trigger"
+                row["result"] = "obeyed bad input" if corrupt else "false trigger"
             else:
-                row["result"] = "held"
+                row["result"] = "ignored bad input" if corrupt else "held"
         else:
             pose = s["pose_before_next"]
             err = None if pose is None else max(abs(pose[0] - s["yaw"]), abs(pose[1] - s["pitch"]))
@@ -274,7 +311,12 @@ def grade(task: Task, stimuli: list[dict], imu, move_times: list[int], offset: f
     if max_rate > MAX_MOVES_PER_S:
         problems.append(f"sent up to {max_rate} MOVE lines in one second (limit {MAX_MOVES_PER_S})")
     if false_triggers:
-        problems.append(f"{false_triggers} false triggers in silent rounds")
+        bad = sum(t["result"] == "obeyed bad input" for t in trials)
+        holds = false_triggers - bad
+        if holds:
+            problems.append(f"{holds} false triggers in silent rounds")
+        if bad:
+            problems.append(f"moved on {bad} malformed or out-of-range lines")
     if problems:
         return metrics, "fail", "; ".join(problems), trials
     speed = f", peak speed {max_speed:.0f} deg/s" if rules["speed_limit_dps"] is not None else ""
@@ -331,7 +373,12 @@ def run(task: Task, solution_dir: Path, request: RunRequest, store: Path, port: 
         time.sleep(step["delay_s"])
         if i and not plan[i - 1]["silent"]:
             stimuli[-1]["pose_before_next"] = read_pose(link)
-        line = f"HOLD {step['seq']}" if step["silent"] else f"TARGET {step['seq']} {step['yaw']} {step['pitch']}"
+        if step.get("line"):
+            line = step["line"]
+        elif step["silent"]:
+            line = f"HOLD {step['seq']}"
+        else:
+            line = f"TARGET {step['seq']} {step['yaw']} {step['pitch']}"
         try:
             sent = sol.tell(line)
         except (BrokenPipeError, OSError):
@@ -363,7 +410,8 @@ def run(task: Task, solution_dir: Path, request: RunRequest, store: Path, port: 
         w.writeheader()
         w.writerows(sol.moves)
     with open(out / "stimuli.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["seq", "delay_s", "silent", "yaw", "pitch", "host_ns", "pose_before_next"])
+        w = csv.DictWriter(f, fieldnames=["seq", "delay_s", "silent", "yaw", "pitch", "host_ns", "pose_before_next",
+                                           "kind", "line"], extrasaction="ignore")
         w.writeheader()
         w.writerows(stimuli)
     offset = (clock_start["offset_us"] + clock_end["offset_us"]) / 2

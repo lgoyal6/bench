@@ -1,0 +1,41 @@
+id: L5-head-robust
+level: 5
+title: Steer the robot's head from a noisy command stream without ever obeying a bad command
+instruction: |
+  Write a program in C that steers the head of a StackChan robot from a command stream that
+  is not always well formed. Your repository's root must contain a Makefile whose default
+  target builds an executable named `solution`.
+
+  The harness starts `solution` with the head at yaw 0, pitch 10 and sends one line per
+  message on standard input. Valid lines are exactly:
+    TARGET <seq> <yaw> <pitch>   turn the head to this pose now; seq is a positive integer,
+                                 yaw and pitch are decimal numbers in degrees with
+                                 -40 <= yaw <= 40 and 8 <= pitch <= 35
+    HOLD <seq>                   a silent round: do not move the head
+    END                          exit
+  Any other line is invalid and must be ignored without moving the head. This includes
+  lines with missing or extra fields, a wrong or lowercase keyword, values that are not
+  plain finite decimal numbers (such as nan or inf), values outside the ranges above, and
+  lines of any length (some are hundreds of characters long).
+
+  To move the head, write `MOVE <yaw> <pitch>` followed by a newline to standard output and
+  flush it. Each valid TARGET must make the head start turning within 120 ms, measured by
+  the robot's IMU as 3 degrees of rotation, and the head must be within 8 degrees of the
+  target when the next message arrives. Turning the head by 5 degrees or more after a HOLD
+  or an invalid line fails that round. The run passes only if every valid TARGET is met and
+  no HOLD or invalid line moves the head.
+hardware: stackchan
+deadlines:
+  - name: target_to_head_turn
+    max_ms: 120
+metrics: [deadline_hit_rate, worst_latency_ms, p99_latency_ms, false_triggers, angle_error_deg]
+trials: 36
+cpu_budget_pct: 100
+randomized:
+  stimulus_delay_ms: [900, 1500]
+  directions: []
+  silent_round_ratio: 0.1
+  allowed_faults: []
+reference_solution: tasks/L5-head-robust/reference
+broken_solution: tasks/L5-head-robust/broken
+held_out: false
