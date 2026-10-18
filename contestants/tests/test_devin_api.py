@@ -45,7 +45,8 @@ class FakeDevin:
 
 def contestant(fake, timeout_s=60):
     config = DevinConfig(api_key="k", org_id="org-1", solutions_repo=REPO, timeout_s=timeout_s, poll_s=0)
-    return DevinApiContestant(config, client=httpx.Client(transport=httpx.MockTransport(fake)), sleep=lambda s: None)
+    return DevinApiContestant(config, client=httpx.Client(transport=httpx.MockTransport(fake)), sleep=lambda s: None,
+                              remote_has=lambda repo, sha: True)
 
 
 def test_submit_creates_session_with_schema_and_waits_for_commit():
@@ -111,3 +112,15 @@ def _result(commit: Commit) -> RunResult:
                         extra={"angle_error_deg": 0.2}),
         verdict="fail", verdict_reason="missed 4 of 3000 deadlines", trace_uri="https://traces/rig-1-x/trace.kev",
     )
+
+
+def test_reported_commit_missing_from_the_repo_is_an_error(monkeypatch):
+    # 2026-10-18: Devin reported a SHA that was never pushed (its GitHub app had no access).
+    import bench_contestants.devin_api as devin_api
+    monkeypatch.setattr(devin_api, "PUSH_GRACE_S", 0.0)
+    fake = FakeDevin([{"repo": REPO, "sha": "ebdc601ad4"}])
+    config = DevinConfig(api_key="k", org_id="org-1", solutions_repo=REPO, timeout_s=60, poll_s=0)
+    c = DevinApiContestant(config, client=httpx.Client(transport=httpx.MockTransport(fake)), sleep=lambda s: None,
+                           remote_has=lambda repo, sha: False)
+    with pytest.raises(DevinError, match="not in .* check that Devin's GitHub integration can push"):
+        c.submit(TASK, "job-9")

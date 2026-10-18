@@ -15,6 +15,7 @@ Configuration (all required unless noted):
 
 import os
 import re
+import subprocess
 import time
 from dataclasses import dataclass
 
@@ -96,8 +97,10 @@ def feedback_message(result: RunResult) -> str:
 class DevinApiContestant:
     """Implements the contract Contestant protocol."""
 
-    def __init__(self, config: DevinConfig, client: httpx.Client | None = None, sleep=time.sleep):
+    def __init__(self, config: DevinConfig, client: httpx.Client | None = None, sleep=time.sleep,
+                 remote_has=None):
         self.config = config
+        self._remote_has = remote_has or _remote_has
         self.id = ContestantId(agent="devin", model="devin-api")
         self._client = client or httpx.Client(timeout=60)
         self._sleep = sleep
@@ -147,6 +150,7 @@ class DevinApiContestant:
 
     def _wait_for_commit(self, session_id: str, previous_sha: str | None) -> Commit:
         deadline = time.monotonic() + self.config.timeout_s
+        reported_at: float | None = None
         url = f"{self._sessions_url()}/{session_id}"
         while True:
             session = self._request("GET", url)
@@ -156,13 +160,30 @@ class DevinApiContestant:
                 repo = output.get("repo") or self.config.solutions_repo
                 if _normalize(repo) != _normalize(self.config.solutions_repo):
                     raise DevinError(f"session {session_id} pushed to {repo}, expected {self.config.solutions_repo}")
-                return Commit(repo=self.config.solutions_repo, sha=sha)
+                # Devin reports the SHA itself; only trust it once the commit is really on the remote.
+                if self._remote_has(self.config.solutions_repo, sha):
+                    return Commit(repo=self.config.solutions_repo, sha=sha)
+                reported_at = reported_at or time.monotonic()
+                if time.monotonic() - reported_at > PUSH_GRACE_S:
+                    raise DevinError(
+                        f"session {session_id} reported commit {sha} but it is not in {self.config.solutions_repo} "
+                        f"after {PUSH_GRACE_S:g} s; check that Devin's GitHub integration can push to that repo")
             status = str(session.get("status", "")).lower()
             if status in TERMINAL_STATUSES:
                 raise DevinError(f"session {session_id} ended with status {status!r} before reporting a commit")
             if time.monotonic() >= deadline:
                 raise DevinError(f"session {session_id} reported no new commit within {self.config.timeout_s:g} s")
             self._sleep(self.config.poll_s)
+
+
+PUSH_GRACE_S = 120.0
+
+
+def _remote_has(repo: str, sha: str) -> bool:
+    """True if some branch or tag of repo points at sha (a pushed head commit)."""
+    proc = subprocess.run(["git", "ls-remote", repo], capture_output=True, text=True, timeout=60,
+                          env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    return proc.returncode == 0 and any(line.split()[0] == sha for line in proc.stdout.splitlines() if line)
 
 
 def from_env() -> DevinApiContestant:
