@@ -29,6 +29,12 @@ Bugs found on hardware and fixed in PR #10:
 - `devin-api`: Devin v3 API driver. Waiting on a service-user key from Cognition.
 - `claude-code`: Claude Code headless driver. It works today, so the full loop (agent writes code, the rig grades it, results go back, the agent retries) can run before the Devin key arrives. Run it with `bench compete --task L2-servo-track --contestant claude-code`.
 
+## Rig rules (checked from the kernel trace)
+
+Every contestant brief states the rules in `rig/bench_rig/rules.py`: keep the CPU affinity the rig gives you, and never set a priority above 50. After each run the rig reads the QNX kernel trace (`rig/bench_rig/audit.py`) and fails the run if the contestant (or any process it starts) ran more than 2 ms in total off its assigned core, or made a successful SchedSet above priority 50. An unreadable trace is a rig "error". `bench replay` reruns the same audit. Motivation: Claude Code's first passing L2 solution raised itself to priority 63, above the harness.
+
+To verify on the Pi: that SchedSet's entry event carries the requested priority in data2 (run `rig/harness/schedprobe` under `tracelogger` and compare).
+
 ## Findings so far (check on hardware where marked)
 
 - **No CPU budgets on QNX 8.0.** QNX's 8.0 IDE guide states the OS does not support adaptive partitioning, and the Pi 5 image is SDP 8.0. The rig isolates by core instead: the contestant is pinned to its own core (`on -C 3`), the harness to another, at fixed priorities. `Task.cpu_budget_pct` is therefore not enforced; a contract change (rename to a core/priority spec, or drop it) needs a shared PR with Laksh.

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from bench_contracts import RunResult, Task
+from bench_rig.rules import RULES_TEXT
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,7 +35,9 @@ Task {task.id} (level {task.level}): {task.title}
 {task.instruction}
 
 Deadlines: {deadlines}.
-Trials per run: {task.trials}."""
+Trials per run: {task.trials}.
+
+{RULES_TEXT}"""
     for name, text in interface_headers(task, root).items():
         brief += f"\n\nThe rig provides ../harness/{name} at build time. Its exact contents:\n\n```c\n{text}```"
     return brief

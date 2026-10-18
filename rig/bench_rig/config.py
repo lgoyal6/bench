@@ -30,6 +30,9 @@ class RigConfig:
     # The kernel trace goes to RAM (/dev/shmem) so tens of MB of trace writes never
     # compete with the harness for the SD card during a run.
     trace_dir: str = "/dev/shmem"
+    # Check every run's kernel trace against the rig rules (rules.py). Off only for tests
+    # whose stand-in tracer writes no real trace.
+    audit_rules: bool = True
     trace_base_url: str | None = None
     ssh_options: tuple[str, ...] = ("-o", "BatchMode=yes", "-o", "ConnectTimeout=10")
 

@@ -5,7 +5,7 @@
   bench run --task T --repo URL --sha SHA --agent A --model M [--seed N] [--faults F.json]
   bench compete --task T --contestant claude-code|devin-api [--attempts 2] [--seed N]
                                      an agent writes the code, the rig grades it, results go back for a retry
-  bench replay RUN_DIR               re-score a saved run from its timing log
+  bench replay RUN_DIR               re-score a saved run from its timing log and kernel trace
   bench doctor --live                every lane's check_live(); non-zero exit on any problem
 """
 
@@ -20,6 +20,7 @@ from pathlib import Path
 
 from bench_contracts import Commit, ContestantId, FaultSchedule, RunRequest, RunResult
 from bench_rig import QnxRig, RigConfig, compute_metrics, judge, parse_timing_log
+from bench_rig.audit import TraceAuditError, apply_audit, audit_from_provenance
 from bench_rig.config import REPO_ROOT, ConfigError
 from bench_rig.faults import FaultScheduleError, validate_execution
 from bench_rig.tasks import list_tasks, load_task
@@ -95,12 +96,22 @@ def cmd_replay(args: argparse.Namespace) -> int:
         except (OSError, ValueError, FaultScheduleError):
             execution_ok = False
     verdict, reason = judge(log, metrics, task, saved.request.fault_schedule)
-    same = sha_ok and execution_ok and verdict == saved.verdict and metrics == saved.metrics
+    audit_ok = True
+    if "audit_process" in saved.provenance:  # the run was checked against the rig rules
+        try:
+            trace = run_dir / "trace.kev"
+            audit_ok = hashlib.sha256(trace.read_bytes()).hexdigest() == saved.provenance.get("trace_sha256")
+            metrics, verdict, reason = apply_audit(audit_from_provenance(trace, saved.provenance),
+                                                   metrics, verdict, reason)
+        except (OSError, KeyError, ValueError, TraceAuditError):
+            audit_ok = False
+    same = sha_ok and execution_ok and audit_ok and verdict == saved.verdict and metrics == saved.metrics
     print(json.dumps({
         "run_id": saved.run_id, "saved_verdict": saved.verdict, "replayed_verdict": verdict,
         "replayed_reason": reason, "metrics_match": metrics == saved.metrics,
         "timing_log_matches_provenance": sha_ok,
         "fault_execution_matches_provenance": execution_ok,
+        "trace_audit_matches_provenance": audit_ok,
     }, indent=2))
     return 0 if same else 1
 

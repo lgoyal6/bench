@@ -62,3 +62,16 @@ def test_faulted_replay_requires_unchanged_execution_evidence(tmp_path):
     assert main(args) == 0
     execution.write_text(execution.read_text().replace("background", "other"))
     assert main(args) == 1
+
+
+def test_replay_reruns_the_rules_audit_on_the_saved_trace(tmp_path):
+    from bench_rig.audit import audit_provenance
+    metrics = Metrics(trials=10, deadline_hit_rate=0.5, worst_latency_ms=30.0, p99_latency_ms=30.0)
+    run_dir = _saved_run(tmp_path, "fail", metrics)
+    (run_dir / "trace.kev").write_bytes(b"stand-in-trace\n")
+    saved = RunResult.model_validate_json((run_dir / "run_result.json").read_text())
+    saved.provenance = {"trace_sha256": hashlib.sha256(b"stand-in-trace\n").hexdigest(),
+                        **audit_provenance("solution/solution", 3, 50, 2000.0)}
+    (run_dir / "run_result.json").write_text(saved.model_dump_json())
+    # the saved trace is not a real kernel trace, so the audit cannot be reproduced
+    assert main(["replay", str(run_dir), "--tasks-dir", str(RIG_FIXTURES / "tasks")]) == 1

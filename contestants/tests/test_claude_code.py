@@ -110,6 +110,7 @@ def test_prompt_includes_the_task_interface_header():
     assert TASK.instruction.strip()[:40] in prompt
     assert "l2_api.h" in prompt and interface_headers(TASK)["l2_api.h"] in prompt
     assert "servo_out.h" not in prompt  # rig internals stay hidden
+    assert "never above priority 50" in prompt and "runmask" in prompt
 
 
 def test_config_requires_solutions_repo():

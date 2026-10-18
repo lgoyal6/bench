@@ -56,20 +56,19 @@ version = "0.1.0"
 source = { editable = "../contestants" }
 dependencies = [
     { name = "bench-contracts" },
+    { name = "bench-rig" },
     { name = "httpx" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "bench-contracts", editable = "../contracts" },
+    { name = "bench-rig", editable = "../rig" },
     { name = "httpx", specifier = ">=0.27" },
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "bench-rig", editable = "../rig" },
-    { name = "pytest", specifier = ">=8" },
-]
+dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "bench-contracts"

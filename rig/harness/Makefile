@@ -9,7 +9,7 @@ CPPFLAGS += -D_GNU_SOURCE
 LDLIBS += -lpthread
 endif
 
-BINS = injector cpuhog rtlatency
+BINS = injector cpuhog rtlatency schedprobe
 
 all: $(BINS)
 

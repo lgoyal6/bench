@@ -2,6 +2,7 @@
 real C tools, task harness and solutions are built and run on this machine. Without QNX
 there is no kernel tracer, so the tracer command is a stand-in that writes a file."""
 
+import dataclasses
 import shutil
 import sys
 import subprocess
@@ -50,7 +51,7 @@ def rig(tmp_path):
         workdir=str(tmp_path / "rigwork"), contestant_core=0, harness_core=1,
         pin_template="env BENCH_CORE={core}",
         tracelogger_template="sh -c 'echo stand-in-trace > {path}'",
-        trace_dir=str(tmp_path / "shmem"),
+        trace_dir=str(tmp_path / "shmem"), audit_rules=False,
     )
     (tmp_path / "shmem").mkdir()
     return QnxRig(config, remote=LocalShell())
@@ -74,6 +75,15 @@ def test_reference_solution_passes(rig):
     assert set(result.provenance) == {"trace_sha256", "timing_sha256"}
     saved = Path(result.trace_uri.removeprefix("file://")).parent / "run_result.json"
     assert saved.is_file()
+
+
+@needs_linux
+def test_rules_audit_is_on_by_default_and_an_unreadable_trace_is_an_error(rig):
+    rig.config = dataclasses.replace(rig.config, audit_rules=True)
+    result = rig.run_source(request(), FIXTURES / "solutions" / "echo-good")
+    assert result.verdict == "error"
+    assert result.verdict_reason.startswith("kernel trace audit failed")
+    assert result.provenance["audit_max_priority"] == "50"
 
 
 @needs_linux
