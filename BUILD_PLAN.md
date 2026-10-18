@@ -116,12 +116,36 @@ Chaos agent: a Fetch agent that chooses when to inject faults and load, and earn
 3. README: a What works / What does not table, a file reference behind every claim, a table of every sponsor and its role, and the Fetch badges (`innovationlab`, `hackathon`) with each agent's name and address.
 4. A 3:00 video: job posted, bids and Photon approval, the 410ms failure loses its bond, the lesson is written, the 220ms retry is paid, the gamed solution fails a silent round, fault survival, the learning curve.
 
-## Lanes (parallel once Phase 0 is frozen)
+## Owners
 
-- **Rig**: QNX runner, fault injector, traces, Pi wiring, task reference solutions.
-- **Robot**: StackChan firmware, clock sync, stimulus, whisper.cpp on QNX.
-- **Market**: Fetch agents, ASI:One cards, Payment Protocol bonds, Photon, chaos agent.
-- **Intelligence and data**: contestant drivers, learning loop, Veri, Tiger Data, Snowflake and Cortex, Sentry, dashboard.
+Phase 0 is written together. After that, Tijil owns the hardware, the tasks and the agents' learning; Laksh owns the market, the data and the story.
+
+### Tijil (heavy lane: everything that touches hardware or grades code)
+
+- **Phase 1, rig**: flash QNX on Pi #1, check on-device builds, CPU budgets, tracer and whisper.cpp; write the rig runner, fault injector, cyclictest-style calibration and trace-to-metrics scoring; wire the servo.
+- **Phase 3, robot**: StackChan firmware with timestamped IMU, clock sync and its measured error, stimulus scheduler with seeds and silent rounds, whisper.cpp (and optional mediapipe) on QNX.
+- **Phase 4, task ladder**: L1 to L7, each with reference and broken solutions, randomized parameters and a held-out variant; the L7 QNX driver task.
+- **Contestant drivers** (from Phase 2): Devin CLI per model, Devin v3 API with structured output and session messages, Step 5 and the open model on the same interface.
+- **Phase 5, learning**: post-mortems, lesson checker, Devin knowledge writes, Veri export and fine-tuning, held-out re-scoring.
+- **Phase 6, reproducibility**: flash Pi #3, two-rig agreement, simulation vs reality gap, repeated runs with confidence intervals, `bench replay` and `bench run`.
+
+### Laksh (market, data and story)
+
+- **Phase 0 lead**: drafts the contracts (`task.yaml`, `run_result.json`, message models, bond rules, fallbacks) for both to sign off.
+- **Phase 2, market**: set up Pi #2; Fetch agents (coordinator, runner wrapper, scorer, contestant representatives), ASI:One Interactive Cards, Payment Protocol bonds (Stripe test mode or Visa), Photon approvals.
+- **Chaos agent** (Phase 4): the Fetch agent that schedules faults and load; Tijil's fault injector executes them.
+- **Phase 5, data**: Tiger Data schema and continuous aggregates, Snowflake schema and Cortex queries, Sentry AI agent monitoring, tracing and logs.
+- **Phase 7, interface and story**: ASI:One analytics cards and chart rendering, Paper dashboard, README, video, Devpost submissions and Fetch submission agent.
+
+### Handoffs between the two lanes
+
+| From | To | What | Needed for |
+|---|---|---|---|
+| Laksh | Tijil | Frozen Phase 0 contracts | Everything |
+| Tijil | Laksh | `bench verify` emitting `run_result.json` with trace URIs | Scorer agent, Tiger Data, results cards |
+| Tijil | Laksh | Contestant driver interface (submit task, get commit, send trace) | Contestant representative agents |
+| Laksh | Tijil | Fault schedule format from the chaos agent | Fault injector |
+| Tijil | Laksh | Lessons and learning-curve results | Snowflake, analytics cards, video |
 
 ## Tracks entered
 
