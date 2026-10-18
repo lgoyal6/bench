@@ -97,6 +97,14 @@ Known rig errors leave the virtual bond unsettled and allow full cancellation. A
 
 Successful jobs remain in private SDK storage for review. Execution uses a Sentry job transaction with nested contestant and rig spans, propagates tracing into background threads, and retains the trace ID in result provenance. Known rig errors mark the transaction as failed. Automatic cloud ingestion, retries/learning, fault-plan selection for execution, and separate scorer/settlement identities are not implemented by this worker. Unit-test execution records and provider replacements remain confined to tests; no hardware outcome is synthesized for the live demo.
 
+### Export measured results for analytics and data ingestion
+
+`uv run --project agents bench-runs --snapshot /absolute/path/to/coordinator-state.json --output /absolute/path/to/runs.jsonl` reads a stable snapshot of the coordinator's SDK storage. Stop the coordinator before taking the snapshot, or copy its state only when no job is changing. Export checks the full request, job, bid, submission and session/payment provenance before writing any records. Pending jobs without results are omitted; uncertain results require reconciliation. If no attributed results exist, export refuses to create a file. It never exports standalone hypothetical payment outcomes, chat ownership or credentials.
+
+The destination must be new and is created with owner-only permissions. The command reports source/output SHA256 hashes. State validation proves consistency with that snapshot, not independent authenticity of a contestant session or hardware trace. Keep the original private state, session reference and rig artifacts with the export. Rig errors are retained, while downstream bidding/calibration excludes them.
+
+Use the exported JSONL with `bench-analytics --records /absolute/path/to/runs.jsonl --output-dir /absolute/path/to/new-report`, or with the explicit `bench-data ingest --backend snowflake --records /absolute/path/to/runs.jsonl` and Tiger ingestion commands in `data/README.md`. Load the relevant private provider environment variables first. Imports are explicit, single-writer operations; the coordinator never makes a cloud write merely because a chat card is refreshed.
+
 ## Payment simulation for the commerce demo
 
 The user explicitly approved this payment-only simulation on October 17. It is an exception to the repository's default no-mock-payments rule. No Visa API, merchant account, card data or credentials are used. Visa challenge eligibility is not established by this demo.

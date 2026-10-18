@@ -534,3 +534,51 @@ async def test_execution_emits_job_and_threaded_provider_spans(execution, monkey
     assert {span["op"] for span in transaction["spans"]} == {"bench.contestant", "bench.rig"}
     assert all(span["trace_id"] == trace_id for span in transaction["spans"])
 
+
+@pytest.mark.parametrize("verdict", ["pass", "fail", "error"])
+async def test_export_persisted_execution_for_backend_ingestion(execution, tmp_path, verdict):
+    import stat
+
+    from bench_agents.records import export_runs
+    from bench_data.records import read_records
+
+    e = execution
+    e.record.verdict = verdict
+    await reserve(e)
+    await process_executions(e.chat, e.factory)
+    snapshot, output = tmp_path / "state.json", tmp_path / "runs.jsonl"
+    snapshot.write_text(json.dumps(e.chat.storage.data))
+    report = export_runs(snapshot, output)
+    records = read_records(output)
+    assert report["runs"] == 1
+    assert records[0].run_id == e.record.run_id and records[0].verdict == verdict
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    assert "owner" not in output.read_text() and "session" not in report
+    with pytest.raises(FileExistsError):
+        export_runs(snapshot, output)
+
+
+@pytest.mark.parametrize("problem", ["empty", "request", "session", "uncertain", "missing_state"])
+async def test_export_rejects_unattributed_or_uncertain_results(execution, tmp_path, problem):
+    from bench_agents.records import export_runs
+
+    e = execution
+    await reserve(e)
+    await process_executions(e.chat, e.factory)
+    data = e.chat.storage.data
+    record = data[e.job_id]["execution"]
+    if problem == "empty":
+        del record["result"]
+    elif problem == "request":
+        record["request"]["seed"] += 1
+    elif problem == "session":
+        record["result"]["provenance"]["contestant_session_ref"] = "other-session"
+    elif problem == "uncertain":
+        record["phase"] = "review_required"
+    else:
+        del data[e.job_id]
+    snapshot, output = tmp_path / "state.json", tmp_path / "runs.jsonl"
+    snapshot.write_text(json.dumps(data))
+    with pytest.raises(MarketError):
+        export_runs(snapshot, output)
+    assert not output.exists()
