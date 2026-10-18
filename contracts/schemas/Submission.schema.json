@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "Commit": {
+      "properties": {
+        "repo": {
+          "description": "Git URL the rig pulls from",
+          "title": "Repo",
+          "type": "string"
+        },
+        "sha": {
+          "pattern": "^[0-9a-f]{7,40}$",
+          "title": "Sha",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "sha"
+      ],
+      "title": "Commit",
+      "type": "object"
+    },
+    "Contestant": {
+      "properties": {
+        "agent": {
+          "description": "e.g. 'devin', 'step-5-preview', 'veri-open-model'",
+          "title": "Agent",
+          "type": "string"
+        },
+        "model": {
+          "description": "e.g. 'opus', 'swe', 'gpt'; same as agent when not applicable",
+          "title": "Model",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "model"
+      ],
+      "title": "Contestant",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "contestant": {
+      "$ref": "#/$defs/Contestant"
+    },
+    "commit": {
+      "$ref": "#/$defs/Commit"
+    },
+    "session_ref": {
+      "description": "Devin session URL or other agent session ID",
+      "title": "Session Ref",
+      "type": "string"
+    },
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "job_id",
+    "contestant",
+    "commit",
+    "session_ref",
+    "attempt"
+  ],
+  "title": "Submission",
+  "type": "object"
+}

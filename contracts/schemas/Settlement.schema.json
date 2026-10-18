@@ -1,0 +1,40 @@
+{
+  "properties": {
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "paid_to_agent_usd": {
+      "description": "Price on pass plus bond returned",
+      "minimum": 0,
+      "title": "Paid To Agent Usd",
+      "type": "number"
+    },
+    "paid_to_customer_usd": {
+      "description": "Bond share kept by the customer",
+      "minimum": 0,
+      "title": "Paid To Customer Usd",
+      "type": "number"
+    },
+    "payment_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Payment Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "job_id",
+    "run_id",
+    "paid_to_agent_usd",
+    "paid_to_customer_usd",
+    "payment_ids"
+  ],
+  "title": "Settlement",
+  "type": "object"
+}

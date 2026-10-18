@@ -1,0 +1,179 @@
+{
+  "$defs": {
+    "Deadline": {
+      "properties": {
+        "name": {
+          "description": "What is timed, e.g. 'name_to_head_motion'",
+          "title": "Name",
+          "type": "string"
+        },
+        "max_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Max Ms",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "max_ms"
+      ],
+      "title": "Deadline",
+      "type": "object"
+    },
+    "Randomization": {
+      "properties": {
+        "stimulus_delay_ms": {
+          "description": "Random delay range before each stimulus",
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Stimulus Delay Ms",
+          "type": "array"
+        },
+        "directions": {
+          "description": "e.g. ['left', 'right']",
+          "items": {
+            "type": "string"
+          },
+          "title": "Directions",
+          "type": "array"
+        },
+        "silent_round_ratio": {
+          "description": "Share of rounds with no stimulus; reacting in one is a false trigger",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Silent Round Ratio",
+          "type": "number"
+        },
+        "allowed_faults": {
+          "items": {
+            "enum": [
+              "kill_driver",
+              "stop_sensor",
+              "cpu_hog",
+              "corrupt_bytes"
+            ],
+            "type": "string"
+          },
+          "title": "Allowed Faults",
+          "type": "array"
+        }
+      },
+      "required": [
+        "stimulus_delay_ms",
+        "silent_round_ratio"
+      ],
+      "title": "Randomization",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "id": {
+      "description": "e.g. 'L2-servo-track'",
+      "pattern": "^L[1-7]-[a-z0-9-]+$",
+      "title": "Id",
+      "type": "string"
+    },
+    "level": {
+      "maximum": 7,
+      "minimum": 1,
+      "title": "Level",
+      "type": "integer"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "instruction": {
+      "description": "Exactly what the contestant agent is told",
+      "title": "Instruction",
+      "type": "string"
+    },
+    "hardware": {
+      "enum": [
+        "pi_gpio",
+        "stackchan"
+      ],
+      "title": "Hardware",
+      "type": "string"
+    },
+    "deadlines": {
+      "items": {
+        "$ref": "#/$defs/Deadline"
+      },
+      "title": "Deadlines",
+      "type": "array"
+    },
+    "metrics": {
+      "items": {
+        "enum": [
+          "deadline_hit_rate",
+          "worst_latency_ms",
+          "p99_latency_ms",
+          "false_triggers",
+          "fault_survived",
+          "angle_error_deg",
+          "missed_ticks"
+        ],
+        "type": "string"
+      },
+      "title": "Metrics",
+      "type": "array"
+    },
+    "trials": {
+      "description": "Rounds per run",
+      "minimum": 1,
+      "title": "Trials",
+      "type": "integer"
+    },
+    "cpu_budget_pct": {
+      "description": "Guaranteed CPU share for the program",
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "title": "Cpu Budget Pct",
+      "type": "number"
+    },
+    "randomized": {
+      "$ref": "#/$defs/Randomization"
+    },
+    "reference_solution": {
+      "description": "Path to a solution that must pass",
+      "title": "Reference Solution",
+      "type": "string"
+    },
+    "broken_solution": {
+      "description": "Path to a solution that must fail",
+      "title": "Broken Solution",
+      "type": "string"
+    },
+    "held_out": {
+      "description": "Never used for learning; learning curves are measured here",
+      "title": "Held Out",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "level",
+    "title",
+    "instruction",
+    "hardware",
+    "deadlines",
+    "metrics",
+    "trials",
+    "cpu_budget_pct",
+    "randomized",
+    "reference_solution",
+    "broken_solution",
+    "held_out"
+  ],
+  "title": "Task",
+  "type": "object"
+}

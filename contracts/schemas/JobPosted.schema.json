@@ -1,0 +1,37 @@
+{
+  "properties": {
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "customer": {
+      "description": "Agentverse or ASI:One user address",
+      "title": "Customer",
+      "type": "string"
+    },
+    "budget_usd": {
+      "exclusiveMinimum": 0,
+      "title": "Budget Usd",
+      "type": "number"
+    },
+    "max_bond_usd": {
+      "description": "Bond every bidder posts for this job",
+      "exclusiveMinimum": 0,
+      "title": "Max Bond Usd",
+      "type": "number"
+    }
+  },
+  "required": [
+    "job_id",
+    "task_id",
+    "customer",
+    "budget_usd",
+    "max_bond_usd"
+  ],
+  "title": "JobPosted",
+  "type": "object"
+}

@@ -1,0 +1,59 @@
+{
+  "$defs": {
+    "Contestant": {
+      "properties": {
+        "agent": {
+          "description": "e.g. 'devin', 'step-5-preview', 'veri-open-model'",
+          "title": "Agent",
+          "type": "string"
+        },
+        "model": {
+          "description": "e.g. 'opus', 'swe', 'gpt'; same as agent when not applicable",
+          "title": "Model",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "model"
+      ],
+      "title": "Contestant",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "contestant": {
+      "$ref": "#/$defs/Contestant"
+    },
+    "representative": {
+      "description": "Agentverse address of the contestant's representative",
+      "title": "Representative",
+      "type": "string"
+    },
+    "price_usd": {
+      "exclusiveMinimum": 0,
+      "title": "Price Usd",
+      "type": "number"
+    },
+    "confidence": {
+      "description": "Stated probability the code passes",
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    }
+  },
+  "required": [
+    "job_id",
+    "contestant",
+    "representative",
+    "price_usd",
+    "confidence"
+  ],
+  "title": "Bid",
+  "type": "object"
+}
