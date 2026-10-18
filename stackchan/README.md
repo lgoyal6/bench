@@ -50,6 +50,28 @@ schedule. Three 20-trial runs on the real unit (seed 7): 20/20 moves seen each t
 41-44 ms to turn 3 degrees, max 52-56 ms; clock offset known to about +/-3 ms, drift under
 0.3 ms per run.
 
+## Run a graded task
+
+StackChan tasks (`hardware: stackchan` in `task.yaml`) run from this Mac; the contestant's
+`solution` is built and run here, and its moves are forwarded to the robot. The IMU decides.
+
+```
+# reference must pass, broken must fail
+uv run --with pyserial --with pyyaml --with ./contracts python stackchan/host/run_task.py --task L1-head-reflex --verify --seed 7
+# grade any solution directory
+uv run --with pyserial --with pyyaml --with ./contracts python stackchan/host/run_task.py --task L1-head-reflex --solution path/to/solution --seed 7
+```
+
+Results go to `$BENCH_TRACE_STORE/stackchan-mac-1-.../` with a contract `run_result.json`,
+`imu.csv`, `serial.log`, `stimuli.csv`, `moves.csv`, `trials.csv`, `clock.json`, `build.log`
+and `solution.log`. There is no QNX kernel trace for these runs; `trace_uri` points at
+`serial.log` and the provenance says so. `bench replay` does not handle these runs yet.
+
+`L1-head-reflex` verified on the real unit with seeds 7 and 8: the reference met all 21
+targets (slowest 68.3 and 61.7 ms, limit 120 ms; final pose within 3.4 degrees, limit 8)
+with no false triggers; the broken solution missed all 21 (200 ms late) and had 6 and 8
+false triggers.
+
 ## Check the hardware
 
 ```

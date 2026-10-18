@@ -46,7 +46,8 @@ def test_task_definition_is_complete(task_id):
     task = load_task(TASKS, task_id)
     for path in (task.reference_solution, task.broken_solution):
         assert (REPO / path / "Makefile").is_file(), path
-    assert (TASKS / task_id / "harness" / "Makefile").is_file()
+    if task.hardware == "pi_gpio":  # StackChan tasks are graded by stackchan/host/run_task.py
+        assert (TASKS / task_id / "harness" / "Makefile").is_file()
 
 
 def _short_copy(tmp_path: Path, task_id: str, trials: int) -> Path:

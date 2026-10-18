@@ -1,0 +1,33 @@
+id: L1-head-reflex
+level: 1
+title: Turn the robot's head to each target the moment it appears
+instruction: |
+  Write a program in C that steers the head of a StackChan robot. Your repository's root
+  must contain a Makefile whose default target builds an executable named `solution`.
+
+  The harness starts `solution` and talks to it over standard input and output, one line
+  per message. It sends:
+    TARGET <seq> <yaw> <pitch>   turn the head to this pose now; degrees, yaw -40..40,
+                                 pitch 8..35
+    HOLD <seq>                   a silent round: do not move the head
+    END                          exit
+  To move the head, write `MOVE <yaw> <pitch>` followed by a newline to standard output
+  and flush it. Each TARGET must make the head start turning within 120 ms, measured by
+  the robot's IMU as 3 degrees of rotation, and the head must be within 8 degrees of the
+  target when the next message arrives. Moving the head during a HOLD round is a false
+  trigger. The run passes only if every TARGET is met and there are no false triggers.
+hardware: stackchan
+deadlines:
+  - name: target_to_head_turn
+    max_ms: 120
+metrics: [deadline_hit_rate, worst_latency_ms, p99_latency_ms, false_triggers, angle_error_deg]
+trials: 30
+cpu_budget_pct: 100
+randomized:
+  stimulus_delay_ms: [900, 1600]
+  directions: []
+  silent_round_ratio: 0.2
+  allowed_faults: []
+reference_solution: tasks/L1-head-reflex/reference
+broken_solution: tasks/L1-head-reflex/broken
+held_out: false
