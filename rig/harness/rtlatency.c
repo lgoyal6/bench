@@ -4,7 +4,8 @@
  *   rtlatency [--period-us 1000] [--seconds 10] [--core N] [--prio P]
  *
  * A thread sleeps until absolute deadlines one period apart and records how late each
- * wakeup is. Prints one JSON object with min, avg, p99 and max latency in microseconds.
+ * wakeup is. Prints one JSON object with the clock resolution, min, avg, p99 and max
+ * latency, and jitter (max - min), in microseconds.
  * Run it on the contestant core, idle and under cpu_hog on the other cores, to publish
  * the rig's baseline before any contestant is scored.
  */
@@ -76,10 +77,14 @@ int main(int argc, char **argv)
     if (p99 >= n)
         p99 = n - 1;
 
+    /* Absolute lateness includes the clock tick (a sleep ends on the first tick after
+     * its deadline); jitter, max minus min, is the part that reflects the rig. */
     printf("{\"samples\": %zu, \"period_us\": %ld, \"core\": %d, \"prio\": %d, "
-           "\"min_us\": %.3f, \"avg_us\": %.3f, \"p99_us\": %.3f, \"max_us\": %.3f}\n",
-           n, period_us, core, prio, lat[0] / 1000.0, sum / (double)n / 1000.0,
-           lat[p99] / 1000.0, lat[n - 1] / 1000.0);
+           "\"clock_res_us\": %.3f, \"min_us\": %.3f, \"avg_us\": %.3f, \"p99_us\": %.3f, "
+           "\"max_us\": %.3f, \"jitter_us\": %.3f}\n",
+           n, period_us, core, prio, bench_clock_resolution_ns() / 1000.0, lat[0] / 1000.0,
+           sum / (double)n / 1000.0, lat[p99] / 1000.0, lat[n - 1] / 1000.0,
+           (lat[n - 1] - lat[0]) / 1000.0);
     free(lat);
     return 0;
 }
