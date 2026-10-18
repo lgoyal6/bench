@@ -4,6 +4,26 @@ Read [AGENTS.md](../AGENTS.md) first. You may edit only `rig/`, `tasks/`, `stimu
 
 Phases are ordered by risk. Each ends with a check that must pass on real hardware and real services.
 
+## Verified on hardware (Pi 5, QNX 8.0 QSTI build 2026-09-02, rig-1)
+
+`bench verify L2-servo-track` at commit d21c538 (PR #10), 3000 ticks at 100 Hz, 2 ms deadline:
+
+| seed | reference | broken |
+|---|---|---|
+| 7 | pass: hit 1.0, worst 0.384 ms, p99 0.027 ms | fail: hit 0.333, worst 5.05 ms |
+| 8 | pass: hit 1.0, worst 1.004 ms, p99 0.014 ms | fail: hit 0.266, worst 6.05 ms |
+| 9 | pass: hit 1.0, worst 0.177 ms, p99 0.011 ms | fail: hit 0.333, worst 5.16 ms |
+
+No rig overruns, no invalid commands, kernel trace about 32 MB per run.
+
+Rig baseline (`rtlatency`, 1 ms period, 20 s, core 3, FIFO 60). Clock resolution is 1 ms, so absolute lateness is mostly the clock tick, and jitter is the meaningful number:
+- idle: jitter 24.1 us
+- cpuhog on core 2: jitter 25.5 us
+
+Bugs found on hardware and fixed in PR #10:
+1. A harness write to `timing.csv` on the SD card blocked 40.3 ms (REPLY-blocked on `devb-sdmmc-bcm2712`), so a correct controller was scored with missed ticks. Results are now buffered in memory, and the trace goes to `/dev/shmem`.
+2. The rig-overrun limit ignored the 1 ms clock tick. It's now clock resolution plus half the deadline.
+
 ## Findings so far (check on hardware where marked)
 
 - **No CPU budgets on QNX 8.0.** QNX's 8.0 IDE guide states the OS does not support adaptive partitioning, and the Pi 5 image is SDP 8.0. The rig isolates by core instead: the contestant is pinned to its own core (`on -C 3`), the harness to another, at fixed priorities. `Task.cpu_budget_pct` is therefore not enforced; a contract change (rename to a core/priority spec, or drop it) needs a shared PR with Laksh.
