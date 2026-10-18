@@ -1,0 +1,33 @@
+id: L2-servo-track
+level: 2
+title: Hold a servo on a moving target at 100 Hz
+instruction: |
+  Write a servo controller in C for a QNX real-time system. Your repository's root must
+  contain a Makefile whose default target builds an executable named `solution`. It is
+  built with `make` on the target, next to a directory `../harness` that contains
+  `l2_api.h`; add `-I../harness` to your compiler flags and include "l2_api.h".
+
+  At startup, open the POSIX shared memory object L2_SHM_NAME (it already exists), map
+  an l2_shared, and set `attached` to 1. Then, every tick (100 Hz):
+    1. wait for the harness to post `tick`,
+    2. read `target_deg` and `seq`,
+    3. compute a command that moves toward the target by at most L2_MAX_STEP_DEG per tick
+       and stays within [L2_MIN_DEG, L2_MAX_DEG],
+    4. store it in `command_deg`, then store `seq` in `ack_seq`.
+  Every tick must be acknowledged within 2 ms of the post. Missing a single tick fails
+  the run. Exit when `done` becomes 1. Your program runs pinned to one CPU core.
+hardware: pi_gpio
+deadlines:
+  - name: tick_ack
+    max_ms: 2
+metrics: [deadline_hit_rate, worst_latency_ms, p99_latency_ms, missed_ticks, angle_error_deg]
+trials: 3000
+cpu_budget_pct: 100
+randomized:
+  stimulus_delay_ms: [10, 10]
+  directions: []
+  silent_round_ratio: 0
+  allowed_faults: []
+reference_solution: tasks/L2-servo-track/reference
+broken_solution: tasks/L2-servo-track/broken
+held_out: false
