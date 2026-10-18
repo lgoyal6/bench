@@ -35,6 +35,21 @@ Type `left`, `right`, `up`, `down`, `center`, `nod`, `shake`, `look <yaw> <pitch
 `tilt`, `relax`, `stiff`, `ping` or `quit`. Each move reports whether the IMU saw the head move.
 Opening the port restarts the StackChan, so the first command waits about 3 seconds.
 
+## Record a run
+
+```
+uv run --with pyserial python stackchan/host/record.py --seed 7 --trials 20
+```
+
+Sends seeded head targets at random times and saves everything to
+`$BENCH_TRACE_STORE/stackchan/<run_id>/` (default `~/bench-traces/stackchan/`): `serial.log`
+(every line with the Mac's receive time), `imu.csv`, `commands.csv`, `trials.csv` (time to
+turn 3 degrees per command), `clock.json` (device-to-Mac clock offset from pings, start and
+end) and `run.json` (summary plus SHA-256 of each file). The same seed gives the same
+schedule. Three 20-trial runs on the real unit (seed 7): 20/20 moves seen each time, median
+41-44 ms to turn 3 degrees, max 52-56 ms; clock offset known to about +/-3 ms, drift under
+0.3 ms per run.
+
 ## Check the hardware
 
 ```

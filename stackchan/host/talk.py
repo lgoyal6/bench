@@ -17,13 +17,10 @@ Every move prints whether the IMU saw the head actually move.
 """
 
 import argparse
-import glob
 import sys
-import threading
 import time
 
-import serial
-
+from link import Link, find_port
 from motion import TURN_DEG, parse_imu, turn_onset
 
 POSES = {
@@ -35,43 +32,8 @@ GESTURES = {
 }
 
 
-class StackChan:
-    def __init__(self, port: str):
-        self.s = serial.Serial()
-        self.s.port, self.s.baudrate, self.s.timeout = port, 115200, 0.05
-        self.s.dtr = self.s.rts = False
-        self.s.open()  # this resets the ESP32-S3; the reader collects the boot banner
-        self.lines: list[str] = []
-        self.lock = threading.Lock()
-        self.seq = 0
-        threading.Thread(target=self._read, daemon=True).start()
-
-    def _read(self) -> None:
-        pending = b""
-        while True:
-            pending += self.s.read(65536)
-            *done, pending = pending.split(b"\n")
-            if done:
-                with self.lock:
-                    self.lines.extend(x.decode(errors="replace").strip() for x in done)
-
-    def send(self, line: str) -> None:
-        self.s.write(line.encode() + b"\n")
-
-    def take(self) -> list[str]:
-        with self.lock:
-            out, self.lines = self.lines, []
-        return out
-
-    def wait_for(self, prefix: str, seconds: float = 1.0) -> tuple[str | None, list[str]]:
-        end, seen = time.time() + seconds, []
-        while time.time() < end:
-            seen += self.take()
-            hit = next((x for x in seen if x.startswith(prefix)), None)
-            if hit:
-                return hit, seen
-            time.sleep(0.01)
-        return None, seen
+class StackChan(Link):
+    seq = 0
 
     def move(self, yaw: float, pitch: float, settle: float = 0.8) -> str:
         self.seq += 1
@@ -94,7 +56,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", default=None)
     args = parser.parse_args()
-    port = args.port or next(iter(sorted(glob.glob("/dev/cu.usbmodem*"))), None)
+    port = args.port or find_port()
     if not port:
         print("No StackChan found. Plug it in with a USB-C data cable.")
         return 2
