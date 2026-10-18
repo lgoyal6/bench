@@ -3,7 +3,7 @@ name = "bench-contestants"
 version = "0.1.0"
 description = "Contestant drivers for Bench (Devin, Claude Code), implementing the Contestant contract"
 requires-python = ">=3.10"
-dependencies = ["bench-contracts", "httpx>=0.27"]
+dependencies = ["bench-contracts", "bench-rig", "httpx>=0.27"]
 
 [project.entry-points."bench.healthchecks"]
 devin = "bench_contestants.devin_api:DevinHealth"
@@ -15,7 +15,7 @@ devin-api = "bench_contestants.devin_api:from_env"
 claude-code = "bench_contestants.claude_code:from_env"
 
 [dependency-groups]
-dev = ["pytest>=8", "bench-rig"]
+dev = ["pytest>=8"]
 
 [tool.uv.sources]
 bench-contracts = { path = "../contracts", editable = true }

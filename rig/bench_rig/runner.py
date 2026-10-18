@@ -24,9 +24,13 @@ from pathlib import Path
 
 from bench_contracts import FaultSchedule, Metrics, RunRequest, RunResult, Task
 
+from .audit import (
+    DEFAULT_OFF_CORE_TOLERANCE_US, TraceAuditError, apply_audit, audit_from_provenance, audit_provenance,
+)
 from .config import REPO_ROOT, ConfigError, RigConfig
 from .faults import FaultScheduleError, schedule_lines, validate_execution
 from .remote import Remote, RemoteError
+from .rules import CONTESTANT_MAX_PRIORITY
 from .tasks import load_task, task_dir
 from .timing import TimingLogError, compute_metrics, judge, parse_timing_log
 
@@ -188,6 +192,15 @@ class QnxRig:
                 return finish(empty, "error", f"fault execution unverified: {e}", trace, provenance)
             provenance["injector_sha256"] = _sha256(injector_log)
         verdict, reason = judge(log, metrics, task, request.fault_schedule)
+        if self.config.audit_rules:
+            process = f"{self.config.workdir.strip('/')}/solution/solution"
+            provenance.update(audit_provenance(process, self.config.contestant_core,
+                                               CONTESTANT_MAX_PRIORITY, DEFAULT_OFF_CORE_TOLERANCE_US))
+            try:
+                audit = audit_from_provenance(trace, provenance)
+            except TraceAuditError as e:
+                return finish(metrics, "error", f"kernel trace audit failed: {e}", trace, provenance)
+            metrics, verdict, reason = apply_audit(audit, metrics, verdict, reason)
         return finish(metrics, verdict, reason, trace, provenance)
 
     def _stage_and_build(self, task: Task, source: Path, faults: FaultSchedule | None, seed: int, out: Path) -> None:

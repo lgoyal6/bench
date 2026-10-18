@@ -72,7 +72,7 @@ def _run(tmp_path, tasks_dir, task_id, solution):
         tasks_dir=tasks_dir, workdir=str(tmp_path / "work"), contestant_core=0, harness_core=1,
         pin_template="env BENCH_CORE={core}",
         tracelogger_template="sh -c 'echo stand-in-trace > {path}'",
-        trace_dir=str(tmp_path),
+        trace_dir=str(tmp_path), audit_rules=False,
     )
     request = RunRequest(task_id=task_id, contestant=ContestantId(agent="t", model="t"),
                          commit=Commit(repo="local", sha="0000000"), seed=11)
