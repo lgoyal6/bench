@@ -24,6 +24,8 @@ import time
 
 import serial
 
+from motion import TURN_DEG, parse_imu, turn_onset
+
 POSES = {
     "left": (35, 10), "right": (-35, 10), "up": (0, 45), "down": (0, 5), "center": (0, 10),
 }
@@ -31,7 +33,6 @@ GESTURES = {
     "nod": [(0, 30), (0, 8), (0, 30), (0, 10)],
     "shake": [(25, 10), (-25, 10), (25, 10), (0, 10)],
 }
-MOTION_DPS = 20.0
 
 
 class StackChan:
@@ -83,16 +84,10 @@ class StackChan:
         t0 = int(ack.split()[2])
         time.sleep(settle)
         seen += self.take()
-        gyro = [
-            (int(p[1]), max(abs(float(v)) for v in p[5:8]))
-            for p in (x.split() for x in seen if x.startswith("I "))
-            if len(p) == 8 and int(p[1]) >= t0
-        ]
-        onset = next((t for t, g in gyro if g > MOTION_DPS), None)
-        peak = max((g for _, g in gyro), default=0.0)
+        onset, peak = turn_onset(parse_imu(seen), t0)
         if onset is None:
             return f"sent, but the IMU saw no motion (peak {peak:.0f} deg/s; already there?)"
-        return f"moved: peak {peak:.0f} deg/s, started {(onset - t0) / 1000:.1f} ms after the command"
+        return f"moved: turned {TURN_DEG:g} deg {onset:.1f} ms after the command (peak {peak:.0f} deg/s)"
 
 
 def main() -> int:

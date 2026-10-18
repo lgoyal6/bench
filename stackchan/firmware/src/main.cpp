@@ -10,24 +10,14 @@
  *   T <0|1>                 servo torque  -> OK T <0|1>
  *   R                       read head     -> R <t_us> <yaw_deg> <pitch_deg>
  *   S <0|1>                 IMU stream    -> OK S <0|1>
- *   L <level>               sound onset threshold (int16 peak) -> OK L <level>
- *   V <0|1>                 stream mic chunk levels             -> OK V <0|1>
  *   D                       diagnostics
  * Stream and events:
  *   I <t_us> <ax> <ay> <az> <gx> <gy> <gz>   accel in g, gyro in deg/s
- *   M <t_us> <peak> <floor>                  sound onset heard by the built-in mic
- *   V <t_us> <peak> <left> <right>           mic peaks per 8 ms chunk (when enabled)
  *   Y <t_us> <count>                         rising edge on the sync input (G9, Port B)
  * Errors: E <message>
  *
- * Sound and IMU share one clock, so a reaction time (head motion minus sound onset) needs no
- * cross-device sync. Mic times are the end of the DMA chunk minus the onset's position in it;
- * any fixed I2S/DMA delay is not removed.
- *
- * Known issue: the mic captures (16 kHz stereo, 16x gain) but does not respond to real sound
- * on this unit; a steady 1 kHz tone from a nearby speaker leaves the level unchanged. Power
- * (AXP2101 0x90 = 0xBF) and the ES7210 at 0x40 match the stock firmware, which configures the
- * ES7210 differently (MIC1-3, 24 kHz, esp_codec_dev). Until this is fixed, do not use M events.
+ * The built-in microphone is not used: on this unit it did not respond to real sound, so
+ * stimuli are timed from the host's commands instead.
  *
  * Hardware details follow M5Stack's StackChan firmware (MIT, github.com/m5stack/StackChan
  * 1b57655): servos are Feetech SCS on UART1 (TX 6, RX 7) at 1 Mbit/s, servo power is pin 0
@@ -39,7 +29,7 @@
 
 #include "SCSCL.h"
 
-static constexpr const char* FW_VERSION = "bench-stackchan 2";
+static constexpr const char* FW_VERSION = "bench-stackchan 3";
 
 // Zero positions read from this unit's stock firmware log (NVS servo/zero_pos_1 and _2).
 static constexpr int YAW_ID = 1, PITCH_ID = 2;
@@ -55,21 +45,9 @@ static constexpr uint8_t PY32_REG_VERSION = 0x02, PY32_REG_DIR_L = 0x03, PY32_RE
 static constexpr uint8_t PY32_REG_PU_L = 0x09, PY32_REG_PD_L = 0x0B;
 static constexpr uint32_t I2C_FREQ = 400000;
 
-static constexpr int MIC_RATE = 16000, MIC_CHUNK = 128, MIC_BUFS = 4;
-static constexpr int64_t QUIET_BEFORE_ONSET_US = 300000;
 static constexpr int SYNC_PIN = 9;  // Port B; check the pin on the StackChan body before wiring
 
-struct MicChunk {
-    int64_t t_end;
-    int16_t peak;
-    int16_t first_over;  // index of the first sample over the threshold, -1 if none
-};
-
-static int16_t mic_bufs[MIC_BUFS][MIC_CHUNK * 2];
-static volatile int16_t peak_l = 0, peak_r = 0;
-static QueueHandle_t mic_queue, sync_queue;
-static volatile int16_t onset_threshold = 2000;
-static bool mic_levels = false;
+static QueueHandle_t sync_queue;
 static volatile uint32_t sync_count = 0;
 
 static SCSCL servo_bus;
@@ -86,25 +64,6 @@ static int deg_to_raw(float deg, int zero)
 
 static float raw_to_deg(int raw, int zero) { return (raw - zero) * 5.0f / 16.0f; }
 
-// Runs in the mic capture task when a chunk is complete; requeues the same buffer.
-static void mic_chunk_done(void*, void* data, size_t length)
-{
-    int64_t t_end = now_us();
-    const int16_t* s = static_cast<const int16_t*>(data);
-    int16_t thr = onset_threshold, peak = 0, first = -1;
-    int16_t pl = 0, pr = 0;
-    for (size_t i = 0; i < length; i++) {
-        int16_t a = s[i] < 0 ? (int16_t)(s[i] == INT16_MIN ? INT16_MAX : -s[i]) : s[i];
-        if (i & 1) { if (a > pr) pr = a; } else { if (a > pl) pl = a; }
-        if (a > peak) peak = a;
-        if (first < 0 && a > thr) first = (int16_t)(i / 2);
-    }
-    peak_l = pl; peak_r = pr;
-    MicChunk c{t_end, peak, first};
-    xQueueSend(mic_queue, &c, 0);
-    M5.Mic.record((int16_t*)data, length, MIC_RATE, true);
-}
-
 static void IRAM_ATTR sync_isr()
 {
     int64_t t = esp_timer_get_time();
@@ -112,44 +71,6 @@ static void IRAM_ATTR sync_isr()
     BaseType_t woken = pdFALSE;
     xQueueSendFromISR(sync_queue, &t, &woken);
     if (woken) portYIELD_FROM_ISR();
-}
-
-static void start_mic()
-{
-    mic_queue = xQueueCreate(64, sizeof(MicChunk));
-    M5.Speaker.end();
-    M5.Mic.setBufferReleaseCallback(nullptr, mic_chunk_done);
-    auto mc = M5.Mic.config();
-    Serial.printf("MICCFG mag=%d os=%d ch=%d rate=%lu\n", (int)mc.magnification, (int)mc.over_sampling, (int)mc.input_channel, (unsigned long)mc.sample_rate);
-    mc.magnification = 16;
-    M5.Mic.config(mc);
-    if (!M5.Mic.begin()) {
-        Serial.println("E mic begin failed");
-        return;
-    }
-    // Two slots in flight; the callback keeps them full.
-    M5.Mic.record(mic_bufs[0], MIC_CHUNK * 2, MIC_RATE, true);
-    M5.Mic.record(mic_bufs[1], MIC_CHUNK * 2, MIC_RATE, true);
-}
-
-static void pump_mic()
-{
-    static int64_t last_loud = 0;
-    static float floor = 0;
-    MicChunk c;
-    while (xQueueReceive(mic_queue, &c, 0) == pdTRUE) {
-        if (mic_levels) Serial.printf("V %lld %d %d %d\n", c.t_end, c.peak, (int)peak_l, (int)peak_r);
-        bool loud = c.first_over >= 0;
-        if (loud) {
-            if (c.t_end - last_loud > QUIET_BEFORE_ONSET_US) {
-                int64_t onset = c.t_end - (int64_t)(MIC_CHUNK - c.first_over) * 1000000 / MIC_RATE;
-                Serial.printf("M %lld %d %.0f\n", onset, c.peak, floor);
-            }
-            last_loud = c.t_end;
-        } else {
-            floor = floor == 0 ? c.peak : floor * 0.98f + c.peak * 0.02f;
-        }
-    }
 }
 
 static void pump_sync()
@@ -232,13 +153,6 @@ static void handle_line(char* line)
     } else if (cmd == 'S') {
         streaming = atoi(line + 1) != 0;
         Serial.printf("OK S %d\n", streaming ? 1 : 0);
-    } else if (cmd == 'L') {
-        int v = atoi(line + 1);
-        onset_threshold = (int16_t)constrain(v, 1, 32767);
-        Serial.printf("OK L %d\n", onset_threshold);
-    } else if (cmd == 'V') {
-        mic_levels = atoi(line + 1) != 0;
-        Serial.printf("OK V %d\n", mic_levels ? 1 : 0);
     } else if (cmd == 'D') {
         Serial.printf("D board=%d imu_type=%d sda=%d scl=%d", (int)M5.getBoard(), (int)M5.Imu.getType(),
                       M5.In_I2C.getSDA(), M5.In_I2C.getSCL());
@@ -257,7 +171,8 @@ static void handle_line(char* line)
 void setup()
 {
     auto cfg = M5.config();
-    cfg.internal_spk = false;  // the mic and speaker share I2S; only the mic is used
+    cfg.internal_spk = false;
+    cfg.internal_mic = false;
     M5.begin(cfg);
     Serial.begin(115200);
 
@@ -277,9 +192,8 @@ void setup()
     sync_queue = xQueueCreate(32, sizeof(int64_t));
     pinMode(SYNC_PIN, INPUT_PULLDOWN);
     attachInterrupt(digitalPinToInterrupt(SYNC_PIN), sync_isr, RISING);
-    start_mic();
-    Serial.printf("HELLO %s imu=%s mic=%s servo_power=%d servo_bus=%d ping=%d,%d zero=%d,%d\n",
-                  FW_VERSION, M5.Imu.isEnabled() ? "ok" : "none", M5.Mic.isEnabled() ? "ok" : "none", servo_power, bus_ok, ping_yaw, ping_pitch, YAW_ZERO,
+    Serial.printf("HELLO %s imu=%s servo_power=%d servo_bus=%d ping=%d,%d zero=%d,%d\n",
+                  FW_VERSION, M5.Imu.isEnabled() ? "ok" : "none", servo_power, bus_ok, ping_yaw, ping_pitch, YAW_ZERO,
                   PITCH_ZERO);
 }
 
@@ -300,7 +214,6 @@ void loop()
         }
     }
 
-    pump_mic();
     pump_sync();
 
     if (streaming && M5.Imu.update()) {

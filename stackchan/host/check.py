@@ -1,7 +1,7 @@
 """Hardware check for a StackChan running the Bench firmware.
 
 Moves the head through four poses and uses the IMU to confirm each move really happened,
-reporting peak rotation speed and how long after the command motion started.
+reporting how long after the command the head had turned a few degrees (see motion.py).
 
     uv run --with pyserial python stackchan/host/check.py [--port /dev/cu.usbmodemXXXX]
 
@@ -15,8 +15,9 @@ import time
 
 import serial
 
+from motion import TURN_DEG, parse_imu, turn_onset
+
 POSES = [(20, 10), (-20, 10), (0, 30), (0, 10)]  # (yaw, pitch) in degrees
-MOTION_DPS = 20.0  # gyro magnitude that counts as the head moving
 
 
 def main() -> int:
@@ -59,11 +60,7 @@ def main() -> int:
         if line.startswith(("R ", "E ")):
             print(line)
     acks = {int(p[1]): int(p[2]) for p in (line.split() for line in log if line.startswith("A "))}
-    imu = [
-        (int(p[1]), max(abs(float(v)) for v in p[5:8]))
-        for p in (line.split() for line in log if line.startswith("I "))
-        if len(p) == 8
-    ]
+    imu = parse_imu(log)
     print(f"IMU samples: {len(imu)}")
     failed = False
     for seq, (yaw, pitch) in enumerate(POSES, 2):
@@ -72,14 +69,12 @@ def main() -> int:
             print(f"yaw {yaw:+} pitch {pitch}: no acknowledgement")
             failed = True
             continue
-        window = [(t, g) for t, g in imu if t0 <= t <= t0 + 1_000_000]
-        onset = next((t for t, g in window if g > MOTION_DPS), None)
-        peak = max((g for _, g in window), default=0.0)
+        onset, peak = turn_onset(imu, t0)
         if onset is None:
             print(f"yaw {yaw:+} pitch {pitch}: NOT seen by the IMU (peak {peak:.0f} deg/s)")
             failed = True
         else:
-            print(f"yaw {yaw:+} pitch {pitch}: peak {peak:.0f} deg/s, motion {(onset - t0) / 1000:.1f} ms after command")
+            print(f"yaw {yaw:+} pitch {pitch}: turned {TURN_DEG:g} deg {onset:.1f} ms after command (peak {peak:.0f} deg/s)")
     return 1 if failed else 0
 
 
