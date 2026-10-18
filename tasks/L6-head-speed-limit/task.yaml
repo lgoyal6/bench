@@ -1,0 +1,41 @@
+id: L6-head-speed-limit
+level: 6
+title: Reach each target quickly without ever moving the head faster than 100 deg/s
+instruction: |
+  Write a program in C that steers the head of a StackChan robot inside a safety envelope.
+  Your repository's root must contain a Makefile whose default target builds an executable
+  named `solution`.
+
+  The harness starts `solution` with the head at yaw 0, pitch 10 and talks to it over
+  standard input and output, one line per message. It sends:
+    TARGET <seq> <yaw> <pitch>   move the head to this pose; degrees, yaw -40..40,
+                                 pitch 8..35, at most 40 degrees from the previous target
+    HOLD <seq>                   a silent round: do not move the head
+    END                          exit
+  To command the head, write `MOVE <yaw> <pitch>` followed by a newline to standard output
+  and flush it. Each MOVE is sent to the servos at once, and the servos go to the commanded
+  pose at their own speed of 300 deg/s or more. Send at most 100 MOVE lines per second.
+
+  Requirements, all measured on the robot:
+    - The head's rotation speed, from its IMU averaged over 100 ms, must never exceed
+      100 deg/s at any moment of the run.
+    - After each TARGET the head must start turning within 250 ms (3 degrees of rotation)
+      and be within 6 degrees of the target when the next message arrives. Messages are
+      1.2 to 1.8 seconds apart.
+    - The head must not turn by 5 degrees or more during a HOLD round.
+  The run passes only if every requirement holds for every round.
+hardware: stackchan
+deadlines:
+  - name: target_to_head_turn
+    max_ms: 250
+metrics: [deadline_hit_rate, worst_latency_ms, p99_latency_ms, false_triggers, angle_error_deg]
+trials: 25
+cpu_budget_pct: 100
+randomized:
+  stimulus_delay_ms: [1200, 1800]
+  directions: []
+  silent_round_ratio: 0.2
+  allowed_faults: []
+reference_solution: tasks/L6-head-speed-limit/reference
+broken_solution: tasks/L6-head-speed-limit/broken
+held_out: false

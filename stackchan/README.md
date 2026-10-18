@@ -81,6 +81,16 @@ false triggers.
 `check.py`, `record.py`, `run_task.py` (task grader) and `rig.py` (the contract `Rig` used by
 the `bench` CLI, plus the doctor check). Unit tests: `cd stackchan && uv run pytest`.
 
+## L6-head-speed-limit
+
+A safety-envelope task: reach each target quickly (start within 250 ms, end within 6 degrees)
+while the head's IMU rotation speed, averaged over 100 ms, never exceeds 100 deg/s. The
+servos snap at 300+ deg/s, so a solution has to ramp the head with timed intermediate moves
+while still reading input. Limits were set from measurements on the robot (see `TASK_SPECS`
+in `bench_stackchan/run_task.py`). Verified with seeds 7, 8, 9: the reference (a 60 deg/s
+ramp) passes, with the slowest start at 188-192 ms and peak speed 76-90 deg/s; the broken
+snapping solution fails at 337-350 deg/s. The peak-speed margin is about 10%.
+
 ## Check the hardware
 
 ```

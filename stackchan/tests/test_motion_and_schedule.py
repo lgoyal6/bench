@@ -50,3 +50,15 @@ def test_schedule_is_seeded_and_respects_the_task():
     targets = [s for s in a if not s["silent"]]
     assert 0 < len(targets) < len(a)
     assert all(-40 <= s["yaw"] <= 40 and 8 <= s["pitch"] <= 35 for s in targets)
+
+
+def test_speed_limit_task_caps_target_steps():
+    l6 = Task.model_validate(yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "tasks/L6-head-speed-limit/task.yaml").read_text()))
+    last = (0.0, 10.0)
+    for s in schedule(l6, 7):
+        if s["silent"]:
+            continue
+        step = max(abs(s["yaw"] - last[0]), abs(s["pitch"] - last[1]))
+        assert 10 <= step <= 40
+        last = (s["yaw"], s["pitch"])
