@@ -6,6 +6,7 @@
   bench compete --task T --contestant claude-code|devin-api [--attempts 2] [--seed N]
                                      an agent writes the code, the rig grades it, results go back for a retry
   bench replay RUN_DIR               re-score a saved run from its timing log and kernel trace
+                                     (StackChan runs: from the saved IMU, stimuli and moves)
 
 Tasks with hardware: stackchan run on the StackChan plugged into this Mac (no Pi needed);
 pi_gpio tasks run on the QNX rig configured by BENCH_RIG_*.
@@ -29,6 +30,7 @@ from bench_rig.config import REPO_ROOT, ConfigError
 from bench_rig.faults import FaultScheduleError, validate_execution
 from bench_rig.tasks import list_tasks, load_task
 
+from bench_stackchan.replay import replay as replay_stackchan
 from bench_stackchan.rig import StackChanRig
 
 from .compete import compete
@@ -101,11 +103,21 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_replay(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir)
     saved = RunResult.model_validate_json((run_dir / "run_result.json").read_text())
-    if saved.rig_id.startswith("stackchan"):
-        print(f"{saved.run_id}: replay of StackChan runs is not implemented yet", file=sys.stderr)
-        return 2
+    if saved.rig_id.startswith("stackchan"):  # re-graded from the saved IMU, stimuli and moves
+        report = replay_stackchan(run_dir)
+        same = report.pop("same")
+        print(json.dumps(report, indent=2))
+        return 0 if same else 1
     tasks_dir = Path(args.tasks_dir) if args.tasks_dir else REPO_ROOT / "tasks"
     task = load_task(tasks_dir, saved.request.task_id)
+    trace = run_dir / "trace.kev"
+    if not (run_dir / "timing.csv").is_file() or (trace.is_file() and trace.stat().st_size == 0):
+        # The run ended without a timing log or kernel trace, so the rig could only call it an error.
+        reason = "no timing log" if not (run_dir / "timing.csv").is_file() else "no kernel trace recorded"
+        same = saved.verdict == "error"
+        print(json.dumps({"run_id": saved.run_id, "saved_verdict": saved.verdict, "replayed_verdict": "error",
+                          "replayed_reason": reason, "metrics_match": same}, indent=2))
+        return 0 if same else 1
     timing = (run_dir / "timing.csv").read_bytes()
     expected_sha = saved.provenance.get("timing_sha256")
     sha_ok = expected_sha is None or hashlib.sha256(timing).hexdigest() == expected_sha

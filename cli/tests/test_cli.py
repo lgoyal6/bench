@@ -75,3 +75,17 @@ def test_replay_reruns_the_rules_audit_on_the_saved_trace(tmp_path):
     (run_dir / "run_result.json").write_text(saved.model_dump_json())
     # the saved trace is not a real kernel trace, so the audit cannot be reproduced
     assert main(["replay", str(run_dir), "--tasks-dir", str(RIG_FIXTURES / "tasks")]) == 1
+
+
+def test_replay_of_a_run_without_timing_log_is_an_error_not_a_crash(tmp_path, capsys):
+    import json
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    request = RunRequest(task_id="L2-servo-track", contestant=ContestantId(agent="t", model="t"),
+                         commit=Commit(repo="r", sha="a" * 40), seed=1)
+    (tmp_path / "run_result.json").write_text(RunResult(
+        run_id="rig-1-x", rig_id="rig-1", request=request, started_at=now, finished_at=now,
+        metrics=Metrics(trials=0, deadline_hit_rate=0.0), verdict="error",
+        verdict_reason="commit could not be fetched", trace_uri="file:///run.log").model_dump_json())
+    assert main(["replay", str(tmp_path)]) == 0
+    assert json.loads(capsys.readouterr().out)["replayed_verdict"] == "error"

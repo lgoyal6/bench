@@ -167,6 +167,121 @@ def read_pose(link: Link) -> tuple[float, float] | None:
     return float(p[2]), float(p[3])
 
 
+RAW_FILES = ("serial.log", "imu.csv", "stimuli.csv", "moves.csv", "clock.json", "trials.csv")
+
+
+def grade(task: Task, stimuli: list[dict], imu, move_times: list[int], offset: float, clock_unc_ms: float,
+          invalid: int, plan_len: int, exit_code) -> tuple[Metrics, str, str, list[dict]]:
+    """Grade a run from its raw records. Used live and by replay, so a saved verdict can be
+    re-derived from the files alone. Returns (metrics, verdict, reason, per-trial rows)."""
+    limit = task.deadlines[0].max_ms
+    rules = spec(task)
+    tolerance = rules["pose_tolerance_deg"]
+    trials, latencies, errors, false_triggers, missed = [], [], [], 0, 0
+    for i, s in enumerate(stimuli):
+        if s["host_ns"] is None:
+            continue
+        t0 = int(s["host_ns"] / 1000 + offset)
+        nxt = next((x["host_ns"] for x in stimuli[i + 1:] if x["host_ns"]), None)
+        window = int((nxt - s["host_ns"]) / 1000) if nxt else 1_000_000
+        onset, peak = turn_onset(imu, t0, window_us=window)
+        if s["silent"]:
+            onset, peak = turn_onset(imu, t0, window_us=window, turn_deg=spec(task)["hold_turn_deg"])
+        row = {"seq": s["seq"], "silent": s["silent"], "yaw": s["yaw"], "pitch": s["pitch"],
+               "turn_ms": None if onset is None else round(onset, 2), "peak_dps": round(peak, 1),
+               "pose_error_deg": None, "result": ""}
+        if s["silent"]:
+            if onset is not None:
+                false_triggers += 1
+                row["result"] = "false trigger"
+            else:
+                row["result"] = "held"
+        else:
+            pose = s["pose_before_next"]
+            err = None if pose is None else max(abs(pose[0] - s["yaw"]), abs(pose[1] - s["pitch"]))
+            row["pose_error_deg"] = None if err is None else round(err, 2)
+            if onset is not None:
+                latencies.append(onset)
+            if err is not None:
+                errors.append(err)
+            if onset is None:
+                row["result"] = "no move"
+            elif onset > limit:
+                row["result"] = "late"
+            elif err is None or err > tolerance:
+                row["result"] = "wrong pose"
+            else:
+                row["result"] = "hit"
+            if row["result"] != "hit":
+                missed += 1
+        trials.append(row)
+    live = [t for t in trials if not t["silent"]]
+
+    # Speed envelope: IMU rotation speed, bias-corrected and averaged over speed_window_us, from the
+    # first stimulus to the end of the last round.
+    stamps = [s["host_ns"] for s in stimuli if s["host_ns"]]
+    run_start = int(stamps[0] / 1000 + offset) if stamps else 0
+    run_end = run_start + (int((stamps[-1] - stamps[0]) / 1000) + 1_000_000 if stamps else 0)
+    quiet = [g for t, g in imu if run_start - 500_000 <= t < run_start]
+    bias = tuple(sum(a) / len(quiet) for a in zip(*quiet)) if quiet else (0.0, 0.0, 0.0)
+    window = [(t, g) for t, g in imu if run_start <= t <= run_end]
+    max_speed, over_ms, lo = 0.0, 0.0, 0
+    sums = [0.0, 0.0, 0.0]
+    for hi, (t, g) in enumerate(window):
+        for i in range(3):
+            sums[i] += g[i] - bias[i]
+        while window[lo][0] < t - rules["speed_window_us"]:
+            for i in range(3):
+                sums[i] -= window[lo][1][i] - bias[i]
+            lo += 1
+        n = hi - lo + 1
+        speed = sum((x / n) ** 2 for x in sums) ** 0.5
+        max_speed = max(max_speed, speed)
+        if rules["speed_limit_dps"] is not None and speed > rules["speed_limit_dps"] and hi:
+            over_ms += (t - window[hi - 1][0]) / 1000
+    move_times = sorted(move_times)
+    max_rate, j = 0, 0
+    for k, t in enumerate(move_times):
+        while move_times[j] < t - 1_000_000_000:
+            j += 1
+        max_rate = max(max_rate, k - j + 1)
+    speed_extra = {"max_speed_dps": round(max_speed, 1), "speed_over_limit_ms": round(over_ms, 1),
+                   "max_moves_per_s": float(max_rate)}
+    hits = sum(t["result"] == "hit" for t in live)
+    lat = sorted(latencies)
+    metrics = Metrics(
+        trials=len(trials), deadline_hit_rate=hits / len(live) if live else 0.0,
+        worst_latency_ms=round(lat[-1], 3) if lat else None,
+        p99_latency_ms=round(lat[max(0, -(-len(lat) * 99 // 100) - 1)], 3) if lat else None,
+        false_triggers=false_triggers,
+        extra={**speed_extra, "angle_error_deg": round(sum(errors) / len(errors), 3) if errors else -1.0,
+               "missed_targets": float(missed), "invalid_lines": float(invalid),
+               "clock_uncertainty_ms": clock_unc_ms},
+    )
+
+    if len(stimuli) < plan_len or stimuli[-1]["host_ns"] is None:
+        return metrics, "fail", f"solution exited early (code {exit_code}) after {len(stimuli)} of {plan_len} rounds", trials
+    if not live or len(imu) < 100:
+        return metrics, "error", "too little IMU data to grade", trials
+    problems = []
+    if missed:
+        kinds = {k: sum(t["result"] == k for t in live) for k in ("late", "no move", "wrong pose")}
+        detail = ", ".join(f"{n} {k}" for k, n in kinds.items() if n)
+        problems.append(f"missed {missed} of {len(live)} targets ({detail}; limit {limit:g} ms, {tolerance:g} deg)")
+    if rules["speed_limit_dps"] is not None and max_speed > rules["speed_limit_dps"]:
+        problems.append(f"head moved at up to {max_speed:.0f} deg/s, over the {rules['speed_limit_dps']:g} deg/s "
+                        f"limit for {over_ms:.0f} ms in total")
+    if max_rate > MAX_MOVES_PER_S:
+        problems.append(f"sent up to {max_rate} MOVE lines in one second (limit {MAX_MOVES_PER_S})")
+    if false_triggers:
+        problems.append(f"{false_triggers} false triggers in silent rounds")
+    if problems:
+        return metrics, "fail", "; ".join(problems), trials
+    speed = f", peak speed {max_speed:.0f} deg/s" if rules["speed_limit_dps"] is not None else ""
+    return metrics, "pass", f"all {len(live)} targets met, worst {lat[-1]:.1f} ms{speed}, no false triggers", trials
+
+
+
 def run(task: Task, solution_dir: Path, request: RunRequest, store: Path, port: str) -> RunResult:
     run_id = f"{RIG_ID}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
     out = store / run_id
@@ -257,120 +372,18 @@ def run(task: Task, solution_dir: Path, request: RunRequest, store: Path, port: 
     (out / "clock.json").write_text(json.dumps(clock, indent=2) + "\n")
 
     # Grade from the IMU and the servo read-back.
-    limit = task.deadlines[0].max_ms
-    rules = spec(task)
-    tolerance = rules["pose_tolerance_deg"]
-    trials, latencies, errors, false_triggers, missed = [], [], [], 0, 0
-    for i, s in enumerate(stimuli):
-        if s["host_ns"] is None:
-            continue
-        t0 = int(s["host_ns"] / 1000 + offset)
-        nxt = next((x["host_ns"] for x in stimuli[i + 1:] if x["host_ns"]), None)
-        window = int((nxt - s["host_ns"]) / 1000) if nxt else 1_000_000
-        onset, peak = turn_onset(imu, t0, window_us=window)
-        if s["silent"]:
-            onset, peak = turn_onset(imu, t0, window_us=window, turn_deg=spec(task)["hold_turn_deg"])
-        row = {"seq": s["seq"], "silent": s["silent"], "yaw": s["yaw"], "pitch": s["pitch"],
-               "turn_ms": None if onset is None else round(onset, 2), "peak_dps": round(peak, 1),
-               "pose_error_deg": None, "result": ""}
-        if s["silent"]:
-            if onset is not None:
-                false_triggers += 1
-                row["result"] = "false trigger"
-            else:
-                row["result"] = "held"
-        else:
-            pose = s["pose_before_next"]
-            err = None if pose is None else max(abs(pose[0] - s["yaw"]), abs(pose[1] - s["pitch"]))
-            row["pose_error_deg"] = None if err is None else round(err, 2)
-            if onset is not None:
-                latencies.append(onset)
-            if err is not None:
-                errors.append(err)
-            if onset is None:
-                row["result"] = "no move"
-            elif onset > limit:
-                row["result"] = "late"
-            elif err is None or err > tolerance:
-                row["result"] = "wrong pose"
-            else:
-                row["result"] = "hit"
-            if row["result"] != "hit":
-                missed += 1
-        trials.append(row)
+    clock_unc_ms = round(max(clock_start["offset_uncertainty_us"], clock_end["offset_uncertainty_us"]) / 1000, 3)
+    metrics, verdict, reason, trials = grade(task, stimuli, imu, [m["host_recv_ns"] for m in sol.moves], offset,
+                                             clock_unc_ms, sol.invalid, len(plan), exit_code)
     with open(out / "trials.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(trials[0].keys()) if trials else ["seq"])
         w.writeheader()
         w.writerows(trials)
-
-    live = [t for t in trials if not t["silent"]]
-
-    # Speed envelope: IMU rotation speed, bias-corrected and averaged over speed_window_us, from the
-    # first stimulus to the end of the last round.
-    stamps = [s["host_ns"] for s in stimuli if s["host_ns"]]
-    run_start = int(stamps[0] / 1000 + offset) if stamps else 0
-    run_end = run_start + (int((stamps[-1] - stamps[0]) / 1000) + 1_000_000 if stamps else 0)
-    quiet = [g for t, g in imu if run_start - 500_000 <= t < run_start]
-    bias = tuple(sum(a) / len(quiet) for a in zip(*quiet)) if quiet else (0.0, 0.0, 0.0)
-    window = [(t, g) for t, g in imu if run_start <= t <= run_end]
-    max_speed, over_ms, lo = 0.0, 0.0, 0
-    sums = [0.0, 0.0, 0.0]
-    for hi, (t, g) in enumerate(window):
-        for i in range(3):
-            sums[i] += g[i] - bias[i]
-        while window[lo][0] < t - rules["speed_window_us"]:
-            for i in range(3):
-                sums[i] -= window[lo][1][i] - bias[i]
-            lo += 1
-        n = hi - lo + 1
-        speed = sum((x / n) ** 2 for x in sums) ** 0.5
-        max_speed = max(max_speed, speed)
-        if rules["speed_limit_dps"] is not None and speed > rules["speed_limit_dps"] and hi:
-            over_ms += (t - window[hi - 1][0]) / 1000
-    move_times = sorted(m["host_recv_ns"] for m in sol.moves)
-    max_rate, j = 0, 0
-    for k, t in enumerate(move_times):
-        while move_times[j] < t - 1_000_000_000:
-            j += 1
-        max_rate = max(max_rate, k - j + 1)
-    speed_extra = {"max_speed_dps": round(max_speed, 1), "speed_over_limit_ms": round(over_ms, 1),
-                   "max_moves_per_s": float(max_rate)}
-    hits = sum(t["result"] == "hit" for t in live)
-    lat = sorted(latencies)
-    metrics = Metrics(
-        trials=len(trials), deadline_hit_rate=hits / len(live) if live else 0.0,
-        worst_latency_ms=round(lat[-1], 3) if lat else None,
-        p99_latency_ms=round(lat[max(0, -(-len(lat) * 99 // 100) - 1)], 3) if lat else None,
-        false_triggers=false_triggers,
-        extra={**speed_extra, "angle_error_deg": round(sum(errors) / len(errors), 3) if errors else -1.0,
-               "missed_targets": float(missed), "invalid_lines": float(sol.invalid),
-               "clock_uncertainty_ms": round(max(clock_start["offset_uncertainty_us"],
-                                                 clock_end["offset_uncertainty_us"]) / 1000, 3)},
-    )
-    provenance = {**base_prov, "firmware": hello, "imu_sha256": sha256(out / "imu.csv"),
-                  "serial_log_sha256": sha256(out / "serial.log"), "trials_sha256": sha256(out / "trials.csv")}
-
-    if len(stimuli) < len(plan) or stimuli[-1]["host_ns"] is None:
-        return result(metrics, "fail", f"solution exited early (code {exit_code}) after {len(stimuli)} of {len(plan)} rounds", provenance)
-    if not live or len(imu) < 100:
-        return result(metrics, "error", "too little IMU data to grade", provenance)
-    problems = []
-    if missed:
-        kinds = {k: sum(t["result"] == k for t in live) for k in ("late", "no move", "wrong pose")}
-        detail = ", ".join(f"{n} {k}" for k, n in kinds.items() if n)
-        problems.append(f"missed {missed} of {len(live)} targets ({detail}; limit {limit:g} ms, {tolerance:g} deg)")
-    if rules["speed_limit_dps"] is not None and max_speed > rules["speed_limit_dps"]:
-        problems.append(f"head moved at up to {max_speed:.0f} deg/s, over the {rules['speed_limit_dps']:g} deg/s "
-                        f"limit for {over_ms:.0f} ms in total")
-    if max_rate > MAX_MOVES_PER_S:
-        problems.append(f"sent up to {max_rate} MOVE lines in one second (limit {MAX_MOVES_PER_S})")
-    if false_triggers:
-        problems.append(f"{false_triggers} false triggers in silent rounds")
-    if problems:
-        return result(metrics, "fail", "; ".join(problems), provenance)
-    speed = f", peak speed {max_speed:.0f} deg/s" if rules["speed_limit_dps"] is not None else ""
-    return result(metrics, "pass", f"all {len(live)} targets met, worst {lat[-1]:.1f} ms{speed}, no false triggers",
-                  provenance)
+    provenance = {**base_prov, "firmware": hello, "solution_exit_code": str(exit_code),
+                  "solution_invalid_lines": str(sol.invalid)}
+    for name in RAW_FILES:
+        provenance[f"{name.replace('.', '_')}_sha256"] = sha256(out / name)
+    return result(metrics, verdict, reason, provenance)
 
 
 def main() -> int:
