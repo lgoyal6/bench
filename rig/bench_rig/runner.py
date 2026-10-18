@@ -242,7 +242,18 @@ class QnxRig:
             try:
                 self.remote.get(remote_path, out / name)
             except (RemoteError, OSError, subprocess.TimeoutExpired):
-                pass  # absent artifacts are reported by the caller
+                continue  # absent artifacts are reported by the caller; a trace that failed to copy stays
+            if name == "trace.kev":
+                self._remove_remote_trace(remote_path)
+
+    def _remove_remote_trace(self, path: str) -> None:
+        """Traces live in RAM on the rig (about 30 MB each), so drop each one once it is copied.
+        tracelogger runs as root through sudo, so its file is removed the same way."""
+        sudo = "sudo -n " if self.config.tracelogger_template.startswith("sudo -n ") else ""
+        try:
+            self.remote.run(f"{sudo}rm -f {shlex.quote(path)}", timeout=30, check=False)
+        except (RemoteError, OSError, subprocess.TimeoutExpired):
+            pass  # cleanup only; the run's result does not depend on it
 
     def _trace_file(self, run_id: str) -> str:
         """Per-run trace file on the rig, so a stale trace can never be scored."""

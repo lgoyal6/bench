@@ -178,3 +178,29 @@ def test_fault_applied_after_harness_completion_is_an_error(rig):
     result = rig.run_source(request(schedule), FIXTURES / "solutions" / "echo-good")
     assert result.verdict == "error"
     assert "before the harness completed" in result.verdict_reason
+
+
+def test_trace_is_removed_from_the_rig_after_it_is_copied(tmp_path):
+    from bench_rig.config import RigConfig
+    from bench_rig.runner import QnxRig
+
+    class Shell:
+        def __init__(self):
+            self.commands = []
+
+        def run(self, command, timeout=120, check=True):
+            self.commands.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        def get(self, remote_path, local, timeout=120):
+            if remote_path.endswith(".kev"):
+                Path(local).write_text("trace")
+            else:
+                raise OSError("absent")
+
+    shell = Shell()
+    config = RigConfig(rig_id="t", host="h", user="u", trace_store=tmp_path, trace_dir="/dev/shmem")
+    rig = QnxRig(config, remote=shell)
+    (tmp_path / "rig-t-1").mkdir()
+    rig._fetch(tmp_path / "rig-t-1")
+    assert shell.commands == ["sudo -n rm -f /dev/shmem/bench-rig-t-1.kev"]
