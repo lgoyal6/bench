@@ -1,5 +1,7 @@
 """Bind a rig verdict to the exact job and submitted code before reporting it."""
 
+import json
+
 from bench_contracts.messages import Bid, JobPosted, Submission, Verdict
 from bench_contracts.run import RunResult
 
@@ -23,8 +25,17 @@ def score_result(
         raise MarketError("Run task and commit must match the submitted job")
     if result.request.seed != seed or result.request.stated_confidence != bid.confidence:
         raise MarketError("Run seed and confidence must match the accepted run request")
-    if not result.run_id.strip() or not result.trace_uri.strip() or not result.provenance:
-        raise MarketError("A scored run needs its run ID, trace and service provenance")
+    if (
+        not result.run_id.strip()
+        or not result.rig_id.strip()
+        or not result.trace_uri.strip()
+        or not result.provenance
+    ):
+        raise MarketError("A scored run needs its run/rig IDs, trace and service provenance")
+    try:
+        json.dumps(result.model_dump(mode="python"), allow_nan=False, default=str)
+    except ValueError as exc:
+        raise MarketError("A scored run requires finite metrics") from exc
     if (
         result.started_at.tzinfo is None
         or result.finished_at.tzinfo is None
