@@ -283,10 +283,6 @@ async def process_executions(ctx, provider_factory=load_providers) -> None:
                     provenance[key] = value
                 result = result.model_copy(update={"provenance": provenance})
                 execution["result"] = result.model_dump(mode="json")
-                if result.verdict == "error":
-                    execution.update(phase="rig_error", problem="Rig error; no virtual capture")
-                    ctx.storage.set(job_id, state)
-                    return
                 score_result(
                     JobPosted.model_validate(state["job"]),
                     bid,
@@ -294,6 +290,10 @@ async def process_executions(ctx, provider_factory=load_providers) -> None:
                     result,
                     seed=execution["seed"],
                 )
+                if result.verdict == "error":
+                    execution.update(phase="rig_error", problem="Rig error; no virtual capture")
+                    ctx.storage.set(job_id, state)
+                    return
                 execution["phase"] = "result_ready"
                 ctx.storage.set(job_id, state)
                 finish_execution(ctx, state)

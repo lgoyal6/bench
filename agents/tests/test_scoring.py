@@ -39,7 +39,18 @@ def test_scorer_preserves_rig_outcome_and_metrics(rep, job, record, outcome):
 
 @pytest.mark.parametrize(
     "mutation",
-    ["job", "contestant", "task", "commit", "seed", "confidence", "trace", "provenance", "time"],
+    [
+        "job",
+        "contestant",
+        "task",
+        "commit",
+        "seed",
+        "confidence",
+        "trace",
+        "provenance",
+        "rig",
+        "time",
+    ],
 )
 def test_scorer_rejects_misattributed_or_incomplete_runs(rep, job, record, mutation):
     bid, submission = scoring_inputs(rep, job, record)
@@ -61,7 +72,18 @@ def test_scorer_rejects_misattributed_or_incomplete_runs(rep, job, record, mutat
         record.trace_uri = ""
     elif mutation == "provenance":
         record.provenance = {}
+    elif mutation == "rig":
+        record.rig_id = " "
     else:
         record.finished_at = record.started_at.replace(year=2025)
     with pytest.raises(MarketError):
         score_result(job, bid, submission, record, seed=seed)
+
+
+@pytest.mark.parametrize("field", ["worst_latency_ms", "p99_latency_ms", "extra"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_scorer_refuses_nonfinite_metrics_before_settlement(rep, job, record, field, value):
+    bid, submission = scoring_inputs(rep, job, record)
+    setattr(record.metrics, field, {"invalid": value} if field == "extra" else value)
+    with pytest.raises(MarketError, match="finite"):
+        score_result(job, bid, submission, record, seed=record.request.seed)

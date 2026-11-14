@@ -582,3 +582,26 @@ async def test_export_rejects_unattributed_or_uncertain_results(execution, tmp_p
     with pytest.raises(MarketError):
         export_runs(snapshot, output)
     assert not output.exists()
+
+
+@pytest.mark.parametrize("verdict", ["pass", "fail", "error"])
+@pytest.mark.parametrize("problem", ["nonfinite_extra", "infinite_latency", "missing_rig"])
+async def test_invalid_rig_evidence_requires_review_before_virtual_settlement(
+    execution, verdict, problem
+):
+    e = execution
+    e.record.verdict = verdict
+    if problem == "nonfinite_extra":
+        e.record.metrics.extra = {"invalid": float("nan")}
+    elif problem == "infinite_latency":
+        e.record.metrics.p99_latency_ms = float("inf")
+    else:
+        e.record.rig_id = " "
+    await reserve(e)
+    await process_executions(e.chat, e.factory)
+    assert e.chat.storage.get(e.job_id)["execution"]["phase"] == "review_required"
+    payment = e.chat.storage.get(e.payment_id)
+    assert payment["protocol"]["phase"] == "committed"
+    assert SimulatedBond.model_validate(payment["bond"]).status == "reserved"
+    await process_executions(e.chat, e.factory)
+    assert e.contestant.submit.call_count == e.rig.run.call_count == 1

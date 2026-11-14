@@ -95,6 +95,13 @@ The worker persists the approved task, bid, seed, submission, exact run request 
 
 Known rig errors leave the virtual bond unsettled and allow full cancellation. A crash/timeout during an external call requires manual reconciliation; restarting or redelivering approval never automatically repeats that call. Stored submissions resume without another contestant session. A trusted result is saved before queuing the idempotent CompletePayment, and transport failures can be retried from job status. Job-bound bonds cannot use hypothetical settlement controls. No shared Award or provider-backed Settlement is emitted.
 
+All returned verdicts, including rig errors, must pass scorer attribution and
+evidence checks before becoming a usable result. Missing rig identity or nonfinite
+metrics require manual review and leave the virtual bond reserved. This matches
+the export/data readers' evidence requirements, so invalid measurements cannot
+settle first and fail ingestion later. These checks establish local consistency,
+not physical trace authenticity or a measured hardware outcome.
+
 Successful jobs remain in private SDK storage for review. Execution uses a Sentry job transaction with nested contestant and rig spans, propagates tracing into background threads, and retains the trace ID in result provenance. Known rig errors mark the transaction as failed. Automatic cloud ingestion, retries/learning, fault-plan selection for execution, and separate scorer/settlement identities are not implemented by this worker. Unit-test execution records and provider replacements remain confined to tests; no hardware outcome is synthesized for the live demo.
 
 ### Export measured results for analytics and data ingestion
